@@ -160,7 +160,7 @@ func TestGetOApi_ParamWithQuery(t *testing.T) {
 		t.Errorf("Expected response to contain lang:fr, got %s", bodyStr)
 	}
 
-	// Test sans query string
+	// Test without query string
 	req2 := httptest.NewRequest("GET", "/greeting/john", nil)
 	resp2, err := app.Test(req2)
 	if err != nil {
