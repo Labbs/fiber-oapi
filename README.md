@@ -4,11 +4,11 @@ A Go library that extends Fiber to add automatic OpenAPI documentation generatio
 
 ## Features
 
-- ✅ **GET and POST methods** with automatic validation
+- ✅ **Complete HTTP methods** (GET, POST, PUT, DELETE) with automatic validation
 - ✅ **Powerful validation** via `github.com/go-playground/validator/v10`
 - ✅ **Type safety** with Go generics
 - ✅ **Custom error handling**
-- ✅ **OpenAPI documentation generation**
+- ✅ **OpenAPI documentation generation** with automatic schema generation
 - ✅ **Support for path, query, and body parameters**
 - ✅ **Automatic documentation setup** with configurable paths
 
@@ -133,6 +133,79 @@ fiberoapi.PostOApi(oapi, "/users",
     })
 ```
 
+### PUT with path parameters and JSON body
+
+```go
+type UpdateUserInput struct {
+    ID       string `path:"id" validate:"required"`
+    Username string `json:"username" validate:"omitempty,min=3,max=20,alphanum"`
+    Email    string `json:"email" validate:"omitempty,email"`
+    Age      int    `json:"age" validate:"omitempty,min=13,max=120"`
+}
+
+type UpdateUserOutput struct {
+    ID      string `json:"id"`
+    Message string `json:"message"`
+    Updated bool   `json:"updated"`
+}
+
+fiberoapi.PutOApi(oapi, "/users/:id", 
+    func(c *fiber.Ctx, input UpdateUserInput) (UpdateUserOutput, CreateUserError) {
+        if input.ID == "notfound" {
+            return UpdateUserOutput{}, CreateUserError{
+                Code:    404,
+                Message: "User not found",
+            }
+        }
+        
+        return UpdateUserOutput{
+            ID:      input.ID,
+            Message: "User updated successfully",
+            Updated: true,
+        }, CreateUserError{}
+    }, 
+    fiberoapi.OpenAPIOptions{
+        OperationID: "update-user",
+        Tags:        []string{"users"},
+        Summary:     "Update an existing user",
+    })
+```
+
+### DELETE with path parameters
+
+```go
+type DeleteUserInput struct {
+    ID string `path:"id" validate:"required"`
+}
+
+type DeleteUserOutput struct {
+    ID      string `json:"id"`
+    Message string `json:"message"`
+    Deleted bool   `json:"deleted"`
+}
+
+fiberoapi.DeleteOApi(oapi, "/users/:id", 
+    func(c *fiber.Ctx, input DeleteUserInput) (DeleteUserOutput, CreateUserError) {
+        if input.ID == "protected" {
+            return DeleteUserOutput{}, CreateUserError{
+                Code:    403,
+                Message: "User is protected and cannot be deleted",
+            }
+        }
+        
+        return DeleteUserOutput{
+            ID:      input.ID,
+            Message: "User deleted successfully",
+            Deleted: true,
+        }, CreateUserError{}
+    }, 
+    fiberoapi.OpenAPIOptions{
+        OperationID: "delete-user",
+        Tags:        []string{"users"},
+        Summary:     "Delete a user",
+    })
+```
+
 ## Configuration
 
 The library supports flexible configuration through the `Config` struct:
@@ -188,9 +261,16 @@ This library uses `validator/v10` for validation. You can use all supported vali
 
 ## Supported Parameter Types
 
-- **Path parameters**: `path:"paramName"`
-- **Query parameters**: `query:"paramName"`
-- **JSON body**: `json:"fieldName"` (for POST/PUT)
+- **Path parameters**: `path:"paramName"` (GET, POST, PUT, DELETE)
+- **Query parameters**: `query:"paramName"` (GET, DELETE)
+- **JSON body**: `json:"fieldName"` (POST, PUT)
+
+## Supported HTTP Methods
+
+- **GET**: `fiberoapi.GetOApi()` - Retrieve resources with path/query parameters
+- **POST**: `fiberoapi.PostOApi()` - Create resources with JSON body + optional path parameters
+- **PUT**: `fiberoapi.PutOApi()` - Update resources with path parameters + JSON body
+- **DELETE**: `fiberoapi.DeleteOApi()` - Delete resources with path parameters + optional query parameters
 
 ## Error Handling
 
@@ -223,5 +303,56 @@ When `EnableOpenAPIDocs` is set to `true` (default), the library automatically s
 
 - **Swagger UI**: Available at the configured docs path (default: `/docs`)
 - **OpenAPI JSON**: Available at the configured JSON path (default: `/openapi.json`)
+- **Automatic Schema Generation**: Input and output types are automatically converted to OpenAPI schemas
+- **Components Section**: All schemas are properly organized in the `components/schemas` section
 
 No manual setup required! Just visit `http://localhost:3000/docs` to see your API documentation.
+
+### OpenAPI Schema Generation
+
+The library automatically generates OpenAPI 3.0 schemas from your Go types:
+
+```go
+// This struct automatically becomes an OpenAPI schema
+type User struct {
+    ID       string `json:"id"`
+    Username string `json:"username" validate:"required,min=3"`
+    Email    string `json:"email" validate:"required,email"`
+    Age      int    `json:"age" validate:"min=13,max=120"`
+}
+```
+
+Generated OpenAPI spec will include:
+- Complete path definitions with parameters
+- Request/response schemas
+- Validation rules as schema constraints
+- Proper HTTP status codes
+- Operation IDs, tags, and descriptions
+
+## Migration from v1
+
+If you're migrating from a previous version that used `SetupDocs()`, you can:
+
+1. **Recommended**: Use the new configuration system:
+```go
+// Old way
+oapi := fiberoapi.New(app)
+oapi.SetupDocs()
+
+// New way
+oapi := fiberoapi.New(app) // Uses defaults, docs auto-configured
+```
+
+2. **Backward compatibility**: `SetupDocs()` is still available but deprecated.
+
+### New HTTP Methods
+
+Version 2.0+ includes full CRUD support:
+
+```go
+// All methods now available:
+fiberoapi.GetOApi(oapi, "/users/:id", handler, options)      // ✅ Available
+fiberoapi.PostOApi(oapi, "/users", handler, options)        // ✅ Available  
+fiberoapi.PutOApi(oapi, "/users/:id", handler, options)     // ✅ New in v2.0
+fiberoapi.DeleteOApi(oapi, "/users/:id", handler, options)  // ✅ New in v2.0
+```
