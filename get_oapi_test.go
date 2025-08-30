@@ -244,7 +244,7 @@ func TestGetOApi_ErrorHandling(t *testing.T) {
 		OperationID: "get-user-with-error",
 	})
 
-	// Test cas d'erreur
+	// Test error case
 	req := httptest.NewRequest("GET", "/users/error", nil)
 	resp, err := app.Test(req)
 	if err != nil {
