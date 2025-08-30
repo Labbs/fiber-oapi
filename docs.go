@@ -28,8 +28,6 @@ func DefaultDocConfig() DocConfig {
 }
 
 // SetupDocs configures documentation routes for the OApiApp
-// DEPRECATED: This method is deprecated. Use the Config struct in New() instead for automatic setup.
-// This method is kept for backward compatibility but will be removed in a future version.
 func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	cfg := DefaultDocConfig()
 	if len(config) > 0 {
