@@ -385,7 +385,7 @@ func TestGetOApi_ValidationRequired(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	// Test avec champ requis
+	// Test with required field
 	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
 		return TestOutput{Message: "Hello " + input.Name}, TestError{}
 	}, OpenAPIOptions{
