@@ -241,7 +241,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	// Test avec validation complexe (arrays, nested validation)
+	// Test with complex validation (arrays, nested validation)
 	PostOApi(oapi, "/categories/:categoryId/products",
 		func(c *fiber.Ctx, input PostProductInput) (PostOutput, PostError) {
 			return PostOutput{
