@@ -234,7 +234,7 @@ func TestGetOApi_ErrorHandling(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	// Test avec gestion d'erreur
+	// Test with error handling
 	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
 		if input.Name == "error" {
 			return TestOutput{}, TestError{StatusCode: 404, Message: "User not found"}
