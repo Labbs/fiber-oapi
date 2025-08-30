@@ -236,7 +236,7 @@ func TestValidation_CustomMessages(t *testing.T) {
 		OperationID: "simple-validation",
 	})
 
-	// Test avec nom trop court
+	// Test with name too short
 	req := httptest.NewRequest("GET", "/simple/ab", nil)
 	resp, err := app.Test(req)
 	if err != nil {
