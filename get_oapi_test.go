@@ -52,7 +52,7 @@ func TestGetOApi_SingleParam(t *testing.T) {
 	oapi := New(app)
 
 	// Test with a single parameter
-	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
 		if input.Name == "" {
 			return TestOutput{}, TestError{StatusCode: 400, Message: "Name is required"}
 		}
@@ -83,7 +83,7 @@ func TestGetOApi_MultipleParams(t *testing.T) {
 	oapi := New(app)
 
 	// Test with multiple parameters
-	GetOApi(oapi, "/users/:userId/posts/:postId", func(c *fiber.Ctx, input MultiParamInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:userId/posts/:postId", func(c *fiber.Ctx, input MultiParamInput) (TestOutput, TestError) {
 		return TestOutput{
 			Message: "User " + input.UserID + " post " + input.PostID,
 			Data: map[string]string{
@@ -124,7 +124,7 @@ func TestGetOApi_ParamWithQuery(t *testing.T) {
 	oapi := New(app)
 
 	// Test with path parameter + query
-	GetOApi(oapi, "/greeting/:name", func(c *fiber.Ctx, input ParamWithQueryInput) (TestOutput, TestError) {
+	Get(oapi, "/greeting/:name", func(c *fiber.Ctx, input ParamWithQueryInput) (TestOutput, TestError) {
 		message := "Hello " + input.Name
 		if input.Lang == "fr" {
 			message = "Bonjour " + input.Name
@@ -196,7 +196,7 @@ func TestGetOApi_MissingParamValidation(t *testing.T) {
 	}()
 
 	// This should panic because the "missing" parameter doesn't exist in the path
-	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input MissingParamInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:name", func(c *fiber.Ctx, input MissingParamInput) (TestOutput, TestError) {
 		return TestOutput{Message: "This should not work"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "should-fail",
@@ -208,7 +208,7 @@ func TestGetOApi_EmptyPath(t *testing.T) {
 	oapi := New(app)
 
 	// Test with simple path (no parameters)
-	GetOApi(oapi, "/health", func(c *fiber.Ctx, input struct{}) (TestOutput, TestError) {
+	Get(oapi, "/health", func(c *fiber.Ctx, input struct{}) (TestOutput, TestError) {
 		return TestOutput{Message: "OK"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "health-check",
@@ -235,7 +235,7 @@ func TestGetOApi_ErrorHandling(t *testing.T) {
 	oapi := New(app)
 
 	// Test with error handling
-	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
 		if input.Name == "error" {
 			return TestOutput{}, TestError{StatusCode: 404, Message: "User not found"}
 		}
@@ -276,7 +276,7 @@ func TestGetOApi_OperationStorage(t *testing.T) {
 		ID string `path:"id"`
 	}
 
-	GetOApi(oapi, "/test/:id", func(c *fiber.Ctx, input TestInput) (TestOutput, TestError) {
+	Get(oapi, "/test/:id", func(c *fiber.Ctx, input TestInput) (TestOutput, TestError) {
 		return TestOutput{Message: "test"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "test-operation",
@@ -322,7 +322,7 @@ func TestGetOApi_Validation(t *testing.T) {
 	oapi := New(app)
 
 	// Test with advanced validation
-	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input ValidationInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:name", func(c *fiber.Ctx, input ValidationInput) (TestOutput, TestError) {
 		return TestOutput{
 			Message: fmt.Sprintf("Valid user: %s, email: %s, age: %d", input.Name, input.Email, input.Age),
 		}, TestError{}
@@ -386,7 +386,7 @@ func TestGetOApi_ValidationRequired(t *testing.T) {
 	oapi := New(app)
 
 	// Test with required field
-	GetOApi(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:name", func(c *fiber.Ctx, input SingleParamInput) (TestOutput, TestError) {
 		return TestOutput{Message: "Hello " + input.Name}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "required-field-test",
@@ -399,7 +399,7 @@ func TestGetOApi_ValidationRequired(t *testing.T) {
 		Required string `query:"required" validate:"required"`
 	}
 
-	GetOApi(oapi, "/test/:name", func(c *fiber.Ctx, input QueryRequiredInput) (TestOutput, TestError) {
+	Get(oapi, "/test/:name", func(c *fiber.Ctx, input QueryRequiredInput) (TestOutput, TestError) {
 		return TestOutput{Message: "Valid"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "query-required-test",
