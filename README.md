@@ -1,14 +1,17 @@
 # Fiber OpenAPI
 
-A Go library that extends Fiber to add automatic OpenAPI documentation generation with built-in validation.
+A Go library that extends Fiber to add automatic OpenAPI documentation generation with built-in validation and group support.
 
 ## Features
 
 - ✅ **Complete HTTP methods** (GET, POST, PUT, DELETE) with automatic validation
+- ✅ **Group support** with OpenAPI methods available on both app and groups
+- ✅ **Unified API** with interface-based approach for seamless app/group usage
 - ✅ **Powerful validation** via `github.com/go-playground/validator/v10`
 - ✅ **Type safety** with Go generics
 - ✅ **Custom error handling**
 - ✅ **OpenAPI documentation generation** with automatic schema generation
+- ✅ **Redoc documentation UI** for modern, responsive API documentation
 - ✅ **Support for path, query, and body parameters**
 - ✅ **Automatic documentation setup** with configurable paths
 
@@ -34,10 +37,34 @@ func main() {
     app := fiber.New()
     
     // Create OApi app with default configuration
-    // Documentation will be available at /docs and /openapi.json
+    // Documentation will be available at /documentation (Redoc UI) and /openapi.json
     oapi := fiberoapi.New(app)
 
     // Your routes here...
+
+    oapi.Listen(":3000")
+}
+```
+
+### Using Groups
+
+```go
+func main() {
+    app := fiber.New()
+    oapi := fiberoapi.New(app)
+
+    // Create groups with OpenAPI support
+    v1 := fiberoapi.Group(oapi, "/api/v1")
+    v2 := fiberoapi.Group(oapi, "/api/v2")
+    
+    // Nested groups
+    users := fiberoapi.Group(v1, "/users")
+    admin := fiberoapi.Group(v1, "/admin")
+
+    // Routes work the same on app, groups, and nested groups
+    fiberoapi.Get(oapi, "/health", handler, options)     // On app
+    fiberoapi.Get(v1, "/status", handler, options)       // On group
+    fiberoapi.Post(users, "/", handler, options)         // On nested group
 
     oapi.Listen(":3000")
 }
@@ -82,7 +109,8 @@ type GetError struct {
     Message string `json:"message"`
 }
 
-fiberoapi.GetOApi(oapi, "/greeting/:name", 
+// Works on app
+fiberoapi.Get(oapi, "/greeting/:name", 
     func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
         return GetOutput{Message: "Hello " + input.Name}, GetError{}
     }, 
@@ -91,6 +119,10 @@ fiberoapi.GetOApi(oapi, "/greeting/:name",
         Tags:        []string{"greeting"},
         Summary:     "Get a personalized greeting",
     })
+
+// Works on groups too
+v1 := fiberoapi.Group(oapi, "/api/v1")
+fiberoapi.Get(v1, "/greeting/:name", handler, options)
 ```
 
 ### POST with JSON body and validation
@@ -112,7 +144,7 @@ type CreateUserError struct {
     Message string `json:"message"`
 }
 
-fiberoapi.PostOApi(oapi, "/users", 
+fiberoapi.Post(oapi, "/users", 
     func(c *fiber.Ctx, input CreateUserInput) (CreateUserOutput, CreateUserError) {
         if input.Username == "admin" {
             return CreateUserOutput{}, CreateUserError{
@@ -149,7 +181,7 @@ type UpdateUserOutput struct {
     Updated bool   `json:"updated"`
 }
 
-fiberoapi.PutOApi(oapi, "/users/:id", 
+fiberoapi.Put(oapi, "/users/:id", 
     func(c *fiber.Ctx, input UpdateUserInput) (UpdateUserOutput, CreateUserError) {
         if input.ID == "notfound" {
             return UpdateUserOutput{}, CreateUserError{
@@ -184,7 +216,7 @@ type DeleteUserOutput struct {
     Deleted bool   `json:"deleted"`
 }
 
-fiberoapi.DeleteOApi(oapi, "/users/:id", 
+fiberoapi.Delete(oapi, "/users/:id", 
     func(c *fiber.Ctx, input DeleteUserInput) (DeleteUserOutput, CreateUserError) {
         if input.ID == "protected" {
             return DeleteUserOutput{}, CreateUserError{
@@ -267,10 +299,66 @@ This library uses `validator/v10` for validation. You can use all supported vali
 
 ## Supported HTTP Methods
 
-- **GET**: `fiberoapi.GetOApi()` - Retrieve resources with path/query parameters
-- **POST**: `fiberoapi.PostOApi()` - Create resources with JSON body + optional path parameters
-- **PUT**: `fiberoapi.PutOApi()` - Update resources with path parameters + JSON body
-- **DELETE**: `fiberoapi.DeleteOApi()` - Delete resources with path parameters + optional query parameters
+All methods work with both the main app and groups through the unified API:
+
+- **GET**: `fiberoapi.Get()` - Retrieve resources with path/query parameters
+- **POST**: `fiberoapi.Post()` - Create resources with JSON body + optional path parameters  
+- **PUT**: `fiberoapi.Put()` - Update resources with path parameters + JSON body
+- **DELETE**: `fiberoapi.Delete()` - Delete resources with path parameters + optional query parameters
+
+### Legacy Method Names (Still Supported)
+
+For backward compatibility, the old method names are still available:
+- `fiberoapi.GetOApi()` 
+- `fiberoapi.PostOApi()`
+- `fiberoapi.PutOApi()`
+- `fiberoapi.DeleteOApi()`
+
+## Groups
+
+Fiber-oapi provides full support for Fiber groups while maintaining access to OpenAPI methods:
+
+```go
+// Create the main app
+app := fiber.New()
+oapi := fiberoapi.New(app)
+
+// Create groups - they have access to all Fiber Router methods AND OpenAPI methods
+v1 := fiberoapi.Group(oapi, "/api/v1")
+v2 := fiberoapi.Group(oapi, "/api/v2")
+
+// Nested groups work too
+users := fiberoapi.Group(v1, "/users")
+admin := fiberoapi.Group(v1, "/admin")
+
+// Use OpenAPI methods on any router (app or group)
+fiberoapi.Get(oapi, "/health", healthHandler, options)        // Main app
+fiberoapi.Get(v1, "/status", statusHandler, options)          // Group
+fiberoapi.Post(users, "/", createUserHandler, options)        // Nested group
+fiberoapi.Put(users, "/:id", updateUserHandler, options)      // Nested group
+
+// Use standard Fiber Router methods on groups (inherited via embedding)
+v1.Use("/protected", authMiddleware)                          // Middleware
+admin.Get("/stats", func(c *fiber.Ctx) error {              // Regular Fiber handler
+    return c.JSON(fiber.Map{"stats": "data"})
+})
+
+// For static files, use the main Fiber app
+app.Static("/files", "./uploads")  // Static files via main app
+
+// Groups preserve full path context for OpenAPI documentation
+// fiberoapi.Get(users, "/:id", ...) registers as GET /api/v1/users/{id}
+```
+
+### Group Features
+
+- **Fiber Router compatibility**: Groups embed `fiber.Router` so standard Router methods work (Use, Get, Post, etc.)
+- **OpenAPI method support**: Use `fiberoapi.Get()`, `fiberoapi.Post()`, etc. on groups
+- **Nested groups**: Create groups within groups with proper path handling
+- **Path prefix handling**: OpenAPI paths are automatically constructed with full prefixes
+- **Unified API**: Same function names work on both app and groups through interface polymorphism
+
+**Note**: For features like static file serving, use the main Fiber app: `app.Static("/path", "./dir")`
 
 ## Error Handling
 
@@ -293,20 +381,132 @@ Run tests:
 go test -v
 ```
 
-## Example
+## Complete Example with Groups
 
-See the `_examples/` folder for a complete usage example.
+```go
+package main
+
+import (
+    "github.com/gofiber/fiber/v2"
+    fiberoapi "github.com/labbs/fiber-oapi"
+)
+
+type UserInput struct {
+    ID int `path:"id" validate:"required,min=1"`
+}
+
+type UserOutput struct {
+    ID   int    `json:"id"`
+    Name string `json:"name"`
+}
+
+type UserError struct {
+    Message string `json:"message"`
+}
+
+func main() {
+    app := fiber.New()
+    oapi := fiberoapi.New(app)
+
+    // Global routes
+    fiberoapi.Get(oapi, "/health", func(c *fiber.Ctx, input struct{}) (map[string]string, struct{}) {
+        return map[string]string{"status": "ok"}, struct{}{}
+    }, fiberoapi.OpenAPIOptions{
+        Summary: "Health check",
+        Tags:    []string{"health"},
+    })
+
+    // API v1 group
+    v1 := fiberoapi.Group(oapi, "/api/v1")
+    
+    fiberoapi.Get(v1, "/users/:id", func(c *fiber.Ctx, input UserInput) (UserOutput, UserError) {
+        return UserOutput{ID: input.ID, Name: "User " + string(rune(input.ID))}, UserError{}
+    }, fiberoapi.OpenAPIOptions{
+        Summary: "Get user by ID",
+        Tags:    []string{"users"},
+    })
+
+    fiberoapi.Post(v1, "/users", func(c *fiber.Ctx, input UserOutput) (UserOutput, UserError) {
+        return UserOutput{ID: 99, Name: input.Name}, UserError{}
+    }, fiberoapi.OpenAPIOptions{
+        Summary: "Create a new user",
+        Tags:    []string{"users"},
+    })
+
+    // API v2 with nested groups
+    v2 := fiberoapi.Group(oapi, "/api/v2")
+    usersV2 := fiberoapi.Group(v2, "/users")
+
+    fiberoapi.Get(usersV2, "/:id", func(c *fiber.Ctx, input UserInput) (UserOutput, UserError) {
+        return UserOutput{ID: input.ID, Name: "User v2 " + string(rune(input.ID))}, UserError{}
+    }, fiberoapi.OpenAPIOptions{
+        Summary: "Get user by ID (v2)",
+        Tags:    []string{"users", "v2"},
+    })
+
+    // Mix with standard Fiber methods
+    v1.Use("/admin", func(c *fiber.Ctx) error {
+        return c.Next() // Auth middleware
+    })
+
+    app.Listen(":3000")
+    // Visit http://localhost:3000/docs to see the Redoc documentation
+}
+```
+
+## Advanced Usage
+
+### Custom Documentation Configuration
+
+```go
+config := fiberoapi.DocConfig{
+    Title:       "My API",
+    Description: "My API description",
+    Version:     "2.0.0",
+    DocsPath:    "/documentation",
+    JSONPath:    "/api-spec.json",
+}
+oapi.SetupDocs(config) // Optional - docs are auto-configured by default
+```
+
+### OApiRouter Interface
+
+The library uses an `OApiRouter` interface that allows the same functions to work seamlessly with both apps and groups:
+
+```go
+// This interface is implemented by both *OApiApp and *OApiGroup
+type OApiRouter interface {
+    GetApp() *OApiApp
+    GetPrefix() string
+}
+
+// So these functions work with both:
+func Get[T any, U any, E any](router OApiRouter, path string, handler HandlerFunc[T, U, E], options OpenAPIOptions)
+func Post[T any, U any, E any](router OApiRouter, path string, handler HandlerFunc[T, U, E], options OpenAPIOptions)
+func Put[T any, U any, E any](router OApiRouter, path string, handler HandlerFunc[T, U, E], options OpenAPIOptions)
+func Delete[T any, U any, E any](router OApiRouter, path string, handler HandlerFunc[T, U, E], options OpenAPIOptions)
+func Group(router OApiRouter, prefix string, handlers ...fiber.Handler) *OApiGroup
+```
 
 ## Documentation
 
 When `EnableOpenAPIDocs` is set to `true` (default), the library automatically sets up:
 
-- **Swagger UI**: Available at the configured docs path (default: `/docs`)
-- **OpenAPI JSON**: Available at the configured JSON path (default: `/openapi.json`)
+- **Redoc UI**: Modern, responsive documentation interface available at the configured docs path (default: `/docs`)
+- **OpenAPI JSON**: Complete OpenAPI 3.0 specification available at the configured JSON path (default: `/openapi.json`)
 - **Automatic Schema Generation**: Input and output types are automatically converted to OpenAPI schemas
 - **Components Section**: All schemas are properly organized in the `components/schemas` section
 
-No manual setup required! Just visit `http://localhost:3000/docs` to see your API documentation.
+No manual setup required! Just visit `http://localhost:3000/docs` to see your API documentation with Redoc.
+
+### Redoc vs Swagger UI
+
+This library uses **Redoc** for documentation UI instead of Swagger UI because:
+- **Better performance** with large APIs
+- **Responsive design** that works great on mobile
+- **Clean, modern interface**
+- **Better OpenAPI 3.0 support**
+- **No JavaScript framework dependencies**
 
 ### OpenAPI Schema Generation
 
@@ -331,28 +531,43 @@ Generated OpenAPI spec will include:
 
 ## Migration from v1
 
-If you're migrating from a previous version that used `SetupDocs()`, you can:
+If you're migrating from a previous version, here are the key changes:
 
-1. **Recommended**: Use the new configuration system:
-```go
-// Old way
-oapi := fiberoapi.New(app)
-oapi.SetupDocs()
-
-// New way
-oapi := fiberoapi.New(app) // Uses defaults, docs auto-configured
-```
-
-2. **Backward compatibility**: `SetupDocs()` is still available but deprecated.
-
-### New HTTP Methods
-
-Version 2.0+ includes full CRUD support:
+### 1. New Unified API (Recommended)
 
 ```go
-// All methods now available:
-fiberoapi.GetOApi(oapi, "/users/:id", handler, options)      // ✅ Available
-fiberoapi.PostOApi(oapi, "/users", handler, options)        // ✅ Available  
-fiberoapi.PutOApi(oapi, "/users/:id", handler, options)     // ✅ New in v2.0
-fiberoapi.DeleteOApi(oapi, "/users/:id", handler, options)  // ✅ New in v2.0
+fiberoapi.Get(oapi, "/users/:id", handler, options)      // Works on app
+fiberoapi.Post(oapi, "/users", handler, options)         // Works on app
+
+// And seamlessly on groups
+v1 := fiberoapi.Group(oapi, "/api/v1")
+fiberoapi.Get(v1, "/users/:id", handler, options)        // Works on groups
+fiberoapi.Post(v1, "/users", handler, options)           // Works on groups
 ```
+
+### 2. Group Support
+
+```go
+// New group functionality
+v1 := fiberoapi.Group(oapi, "/api/v1")
+users := fiberoapi.Group(v1, "/users")
+
+// All OpenAPI methods work on groups
+fiberoapi.Get(users, "/:id", getUserHandler, options)
+fiberoapi.Post(users, "/", createUserHandler, options)
+
+// Standard Fiber Router methods work too (inherited via embedding)
+users.Use(authMiddleware)                                     // Middleware
+users.Get("/legacy", func(c *fiber.Ctx) error {             // Regular Fiber handler
+    return c.SendString("legacy endpoint")
+})
+
+// For static files, use the main Fiber app
+app.Static("/avatars", "./uploads")  // Static files via main app
+```
+
+### 3. Documentation UI
+
+- **Changed from Swagger UI to Redoc** for better performance and modern UI
+- Same paths: `/docs` for UI, `/openapi.json` for spec
+- No code changes required for existing documentation setup
