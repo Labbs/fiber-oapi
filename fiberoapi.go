@@ -444,9 +444,10 @@ func Method[TInput any, TOutput any, TError any](
 	fiberHandler := func(c *fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{
-				"error":   "Validation failed",
-				"details": err.Error(),
+			return c.Status(400).JSON(ErrorResponse{
+				Code:    400,
+				Details: err.Error(),
+				Type:    "validation_error",
 			})
 		}
 
