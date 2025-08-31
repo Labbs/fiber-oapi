@@ -1,6 +1,8 @@
 package fiberoapi
 
 import (
+	"fmt"
+	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
@@ -27,7 +29,7 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 	}
 
 	oapi := &OApiApp{
-		App:        app,
+		f:          app,
 		operations: make([]OpenAPIOperation, 0),
 		config:     cfg,
 	}
@@ -43,14 +45,14 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 // setupDocsRoutes automatically configures the documentation routes
 func (o *OApiApp) setupDocsRoutes() {
 	// Serve OpenAPI JSON specification
-	o.Get(o.Config().OpenAPIJSONPath, func(c *fiber.Ctx) error {
+	o.f.Get(o.Config().OpenAPIJSONPath, func(c *fiber.Ctx) error {
 		spec := o.GenerateOpenAPISpec()
 		c.Set("Content-Type", "application/json")
 		return c.JSON(spec)
 	})
 
 	// Serve Redoc documentation
-	o.Get(o.Config().OpenAPIDocsPath, func(c *fiber.Ctx) error {
+	o.f.Get(o.Config().OpenAPIDocsPath, func(c *fiber.Ctx) error {
 		html := generateRedocHTML(o.Config().OpenAPIJSONPath, "API Documentation")
 		c.Set("Content-Type", "text/html")
 		return c.SendString(html)
@@ -58,7 +60,7 @@ func (o *OApiApp) setupDocsRoutes() {
 
 	// Handle trailing slash redirect
 	if !strings.HasSuffix(o.Config().OpenAPIDocsPath, "/") {
-		o.Get(o.Config().OpenAPIDocsPath+"/", func(c *fiber.Ctx) error {
+		o.f.Get(o.Config().OpenAPIDocsPath+"/", func(c *fiber.Ctx) error {
 			return c.Redirect(o.Config().OpenAPIDocsPath)
 		})
 	}
@@ -406,4 +408,116 @@ func isEmptyStruct(t reflect.Type) bool {
 	}
 
 	return t.Kind() == reflect.Struct && t.NumField() == 0
+}
+
+// Method defines a generic method for registering HTTP operations with OpenAPI documentation
+func Method[TInput any, TOutput any, TError any](
+	router OApiRouter, // Interface instead of *OApiApp
+	m string,
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	app := router.GetApp()
+	fullPath := router.GetPrefix() + path
+
+	// Validate path parameters with the input struct
+	if err := validatePathParams[TInput](fullPath); err != nil {
+		panic(fmt.Sprintf("Path validation failed for %s: %v", fullPath, err))
+	}
+
+	// Register the operation for OpenAPI documentation with type information
+	var inputZero TInput
+	var outputZero TOutput
+	var errorZero TError
+
+	app.operations = append(app.operations, OpenAPIOperation{
+		Method:     m,
+		Path:       fullPath,
+		Options:    options,
+		InputType:  reflect.TypeOf(inputZero),
+		OutputType: reflect.TypeOf(outputZero),
+		ErrorType:  reflect.TypeOf(errorZero),
+	})
+
+	// Wrapper
+	fiberHandler := func(c *fiber.Ctx) error {
+		input, err := parseInput[TInput](app, c, fullPath)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{
+				"error":   "Validation failed",
+				"details": err.Error(),
+			})
+		}
+
+		output, customErr := handler(c, input)
+
+		if !isZero(customErr) {
+			return handleCustomError(c, customErr)
+		}
+
+		return c.JSON(output)
+	}
+
+	app.f.Add(m, fullPath, fiberHandler)
+}
+
+// Get defines a GET operation for the OpenAPI documentation
+func Get[TInput any, TOutput any, TError any](
+	router OApiRouter, // Now accepts both *OApiApp and *OApiGroup
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	Method(router, http.MethodGet, path, handler, options)
+}
+
+// Post defines a POST operation for the OpenAPI documentation
+func Post[TInput any, TOutput any, TError any](
+	router OApiRouter, // Now accepts both *OApiApp and *OApiGroup
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	Method(router, http.MethodPost, path, handler, options)
+}
+
+// Put defines a PUT operation for the OpenAPI documentation
+func Put[TInput any, TOutput any, TError any](
+	router OApiRouter, // Now accepts both *OApiApp and *OApiGroup
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	Method(router, http.MethodPut, path, handler, options)
+}
+
+// Delete defines a DELETE operation for the OpenAPI documentation
+func Delete[TInput any, TOutput any, TError any](
+	router OApiRouter, // Now accepts both *OApiApp and *OApiGroup
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	Method(router, http.MethodDelete, path, handler, options)
+}
+
+// Head defines a HEAD operation for the OpenAPI documentation
+func Head[TInput any, TOutput any, TError any](
+	router OApiRouter, // Now accepts both *OApiApp and *OApiGroup
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	Method(router, http.MethodHead, path, handler, options)
+}
+
+// Patch defines a PATCH operation for the OpenAPI documentation
+func Patch[TInput any, TOutput any, TError any](
+	router OApiRouter, // Now accepts both *OApiApp and *OApiGroup
+	path string,
+	handler HandlerFunc[TInput, TOutput, TError],
+	options OpenAPIOptions,
+) {
+	Method(router, http.MethodPatch, path, handler, options)
 }
