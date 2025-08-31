@@ -159,6 +159,16 @@ func validatePathParams[T any](path string) error {
 	var zero T
 	inputType := reflect.TypeOf(zero)
 
+	// If the type is a pointer, get the element type
+	if inputType != nil && inputType.Kind() == reflect.Ptr {
+		inputType = inputType.Elem()
+	}
+
+	// If inputType is nil or not a struct, skip validation
+	if inputType == nil || inputType.Kind() != reflect.Struct {
+		return nil
+	}
+
 	// Extract Fiber path parameters (:param format)
 	pathParams := extractFiberPathParams(path)
 
