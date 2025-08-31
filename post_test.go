@@ -51,7 +51,7 @@ func TestPostOApi_SimplePost(t *testing.T) {
 	oapi := New(app)
 
 	// Test with simple POST (JSON body only)
-	PostOApi(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		return PostOutput{
 			ID:      "user_123",
 			Message: fmt.Sprintf("User %s created successfully", input.Username),
@@ -95,7 +95,7 @@ func TestPostOApi_WithPathParams(t *testing.T) {
 	oapi := New(app)
 
 	// Test with POST + path parameters
-	PostOApi(oapi, "/groups/:groupId/users", func(c *fiber.Ctx, input PostUserWithPathInput) (PostOutput, PostError) {
+	Post(oapi, "/groups/:groupId/users", func(c *fiber.Ctx, input PostUserWithPathInput) (PostOutput, PostError) {
 		return PostOutput{
 			ID:      "user_456",
 			Message: fmt.Sprintf("User %s added to group %s", input.Username, input.GroupID),
@@ -138,7 +138,7 @@ func TestPostOApi_Validation(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	PostOApi(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		return PostOutput{
 			ID:      "user_789",
 			Message: "User created",
@@ -242,7 +242,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 	oapi := New(app)
 
 	// Test with complex validation (arrays, nested validation)
-	PostOApi(oapi, "/categories/:categoryId/products",
+	Post(oapi, "/categories/:categoryId/products",
 		func(c *fiber.Ctx, input PostProductInput) (PostOutput, PostError) {
 			return PostOutput{
 				ID:      "product_999",
@@ -355,7 +355,7 @@ func TestPostOApi_ErrorHandling(t *testing.T) {
 	oapi := New(app)
 
 	// Test with custom error handling
-	PostOApi(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		if input.Username == "forbidden" {
 			return PostOutput{}, PostError{
 				StatusCode: 403,
@@ -438,7 +438,7 @@ func TestPostOApi_OperationStorage(t *testing.T) {
 	// Check that POST operations are properly stored
 	initialCount := len(oapi.operations)
 
-	PostOApi(oapi, "/test", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/test", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		return PostOutput{Message: "test"}, PostError{}
 	}, OpenAPIOptions{
 		OperationID: "test-post-operation",

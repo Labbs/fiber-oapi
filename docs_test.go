@@ -33,12 +33,12 @@ func TestSetupDocs_Documentation(t *testing.T) {
 		t.Errorf("Expected HTML content type, got %s", contentType)
 	}
 
-	// Check HTML content contains Swagger UI
+	// Check HTML content contains Redoc
 	body, _ := io.ReadAll(resp.Body)
 	htmlContent := string(body)
 
-	if !strings.Contains(htmlContent, "swagger-ui") {
-		t.Error("Expected HTML to contain Swagger UI elements")
+	if !strings.Contains(htmlContent, "redoc") {
+		t.Error("Expected HTML to contain Redoc elements")
 	}
 	if !strings.Contains(htmlContent, "/openapi.json") {
 		t.Error("Expected HTML to reference OpenAPI JSON endpoint")
@@ -53,7 +53,7 @@ func TestSetupDocs_CustomConfig(t *testing.T) {
 	oapi := New(app)
 
 	// Add a test route
-	GetOApi(oapi, "/health", func(c *fiber.Ctx, input struct{}) (interface{}, struct{}) {
+	Get(oapi, "/health", func(c *fiber.Ctx, input struct{}) (interface{}, struct{}) {
 		return map[string]string{"status": "ok"}, struct{}{}
 	}, OpenAPIOptions{
 		OperationID: "health-check",

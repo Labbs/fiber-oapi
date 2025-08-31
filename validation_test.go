@@ -32,7 +32,7 @@ func TestAdvancedValidation_UserCreate(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	GetOApi(oapi, "/users/:username", func(c *fiber.Ctx, input UserCreateInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:username", func(c *fiber.Ctx, input UserCreateInput) (TestOutput, TestError) {
 		return TestOutput{
 			Message: fmt.Sprintf("Valid user: %s, %s, age %d, role %s",
 				input.Username, input.Email, input.Age, input.Role),
@@ -134,7 +134,7 @@ func TestAdvancedValidation_Product(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	GetOApi(oapi, "/categories/:categoryId/products/:productId",
+	Get(oapi, "/categories/:categoryId/products/:productId",
 		func(c *fiber.Ctx, input ProductInput) (TestOutput, TestError) {
 			return TestOutput{
 				Message: fmt.Sprintf("Product %s in category %s, price range: %.2f-%.2f, in stock: %t",
@@ -230,7 +230,7 @@ func TestValidation_CustomMessages(t *testing.T) {
 		Name string `path:"name" validate:"required,min=3"`
 	}
 
-	GetOApi(oapi, "/simple/:name", func(c *fiber.Ctx, input SimpleInput) (TestOutput, TestError) {
+	Get(oapi, "/simple/:name", func(c *fiber.Ctx, input SimpleInput) (TestOutput, TestError) {
 		return TestOutput{Message: "Valid"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "simple-validation",
