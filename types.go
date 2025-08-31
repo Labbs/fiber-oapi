@@ -88,3 +88,9 @@ type OpenAPIRequestBody struct {
 	Required    bool                   `json:"required,omitempty"`
 	Content     map[string]interface{} `json:"content"`
 }
+
+type ErrorResponse struct {
+	Code    int    `json:"code"`
+	Details string `json:"details"`
+	Type    string `json:"type"`
+}
