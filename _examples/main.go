@@ -81,12 +81,13 @@ func main() {
 		OpenAPIJSONPath:   "/api-spec.json", // Custom spec path
 	}
 	appOApi := fiberoapi.New(app, customConfig)
+	v1 := fiberoapi.Group(appOApi, "/api/v1")
 
 	// Example 2: Using default configuration (commented out)
 	// appOApi := fiberoapi.New(app) // Will use defaults: /docs and /openapi.json
 
 	// Route GET avec validation
-	fiberoapi.GetOApi(appOApi, "/greeting/:name", func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
+	fiberoapi.Get(appOApi, "/greeting/:name", func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
 		name := input.Name
 		return GetOutput{Message: "Hello " + name}, GetError{}
 	}, fiberoapi.OpenAPIOptions{
@@ -97,7 +98,7 @@ func main() {
 	})
 
 	// POST route with complex validation
-	fiberoapi.PostOApi(appOApi, "/users", func(c *fiber.Ctx, input CreateUserInput) (CreateUserOutput, CreateUserError) {
+	fiberoapi.Post(appOApi, "/users", func(c *fiber.Ctx, input CreateUserInput) (CreateUserOutput, CreateUserError) {
 		// Simulate user creation
 		if input.Username == "admin" {
 			return CreateUserOutput{}, CreateUserError{
@@ -122,7 +123,7 @@ func main() {
 	})
 
 	// PUT route for updating user
-	fiberoapi.PutOApi(appOApi, "/users/:id", func(c *fiber.Ctx, input UpdateUserInput) (UpdateUserOutput, CreateUserError) {
+	fiberoapi.Put(appOApi, "/users/:id", func(c *fiber.Ctx, input UpdateUserInput) (UpdateUserOutput, CreateUserError) {
 		// Simulate user update
 		if input.ID == "nonexistent" {
 			return UpdateUserOutput{}, CreateUserError{
@@ -148,7 +149,7 @@ func main() {
 	})
 
 	// DELETE route for removing user
-	fiberoapi.DeleteOApi(appOApi, "/users/:id", func(c *fiber.Ctx, input DeleteUserInput) (DeleteUserOutput, CreateUserError) {
+	fiberoapi.Delete(appOApi, "/users/:id", func(c *fiber.Ctx, input DeleteUserInput) (DeleteUserOutput, CreateUserError) {
 		// Simulate user deletion
 		if input.ID == "protected" {
 			return DeleteUserOutput{}, CreateUserError{
@@ -171,6 +172,17 @@ func main() {
 		Description: "Removes a user from the system",
 	})
 
+	// GET route with group
+	fiberoapi.Get(v1, "/greeting/:name", func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
+		name := input.Name
+		return GetOutput{Message: "Hello " + name}, GetError{}
+	}, fiberoapi.OpenAPIOptions{
+		OperationID: "get-greeting-group",
+		Tags:        []string{"greeting", "group"},
+		Summary:     "Get a personalized greeting with group",
+		Description: "Returns a greeting message for the provided name",
+	})
+
 	// No need to manually call SetupDocs() - it's automatic when EnableOpenAPIDocs is true!
 
 	fmt.Println("🚀 Server starting on :3000")
@@ -183,5 +195,5 @@ func main() {
 	fmt.Printf("  - Docs path: %s\n", appOApi.Config().OpenAPIDocsPath)
 	fmt.Printf("  - JSON spec path: %s\n", appOApi.Config().OpenAPIJSONPath)
 
-	appOApi.Listen(":3000")
+	app.Listen(":3000")
 }
