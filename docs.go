@@ -49,10 +49,10 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 		return c.JSON(spec)
 	})
 
-	// Serve Swagger UI documentation
+	// Serve Redoc documentation
 	o.Get(cfg.DocsPath, func(c *fiber.Ctx) error {
-		// Generate HTML with embedded Swagger UI
-		html := generateSwaggerHTML(cfg.JSONPath, cfg.Title)
+		// Generate HTML with embedded Redoc
+		html := generateRedocHTML(cfg.JSONPath, cfg.Title)
 		c.Set("Content-Type", "text/html")
 		return c.SendString(html)
 	})
@@ -63,57 +63,29 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	})
 }
 
-// generateSwaggerHTML generates HTML page with embedded Swagger UI
-func generateSwaggerHTML(jsonPath, title string) string {
+// generateRedocHTML generates HTML page with embedded Redoc
+func generateRedocHTML(jsonPath, title string) string {
 	tmpl := `<!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{.Title}}</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
-    <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABhGlDQ1BJQ0MgcHJvZmlsZQAAKJF9kT1Iw0AcxV9TpSotDnYQcchQnSyIijhKFYtgobQVWnUwufQLmjQkKS6OgmvBwY/FqoOLs64OroIg+AHi6OSk6CIl/i8ptIjx4Lgf7+497t4BQqPCVLNrAlA1y0jFY2I2tyoGXuHFCPohYlhipp5IL2bgOr7u4ePrXZRneZ/7c/QpeZMBPpF4lumGRbxBPL1p6Zz3iSOsJCnE58TjBl2Q+JHrsstvnIsOCzwzYmRS88QRYrHYwXIHs5KhEk8RRxVVo3wh67LCeYuzWq2y1j35C0N5bSXNdZojiGMJCSQhQkYNZVRgIUKrRoqJFO3HPPwjjj9JLplcZTByLKAKFZLjB/+D392ChckTbikYA7pfbPtjGAjsAs26bX8f23bzBPA/A1da219tALOfpNfbWuQI6N8GLq7bmrwHXO4Ag0+6ZEiOFKDpLxSA9zP6phwwcAv0rLm9tfZx+gBkqKvlG+DgEBgtUva6x7t7Ont790y7vx8wOHKjlGMvWAAAAAlwSFlzAAAuIwAALiMBeKU/dgAAAAd0SU1FB+cIDhcVKVGPvxIAAAG8SURBVHjatZe9SwJxGMc/95w/8A1C3FqaWpqaghZRfAkaIhqioaEhJCJwcGgKIQqKFgcHB1sK2moRBYeIlpYgGpqCiOAVFBqChjYbXJoiBof7de0OH4fvdr/n+zzP93me5zkeCFmWsVgsSCSShz9B13U0TUOSJITQDWBZFoZhJFUAWZblrwMkPwDMqQAoiqKPjfGtCqCqKkEQ+LcKoOt6YozPqwBBEJBl+a6gL9YAM01RpKoqWZbRNA1FUXAcx9u0ACaTCd/vz9LSEo7j4Pv+OcuyLM/z/BULAJZleRwC4AkCB7y4sH7/cOE4jmdjHQMB1jVc7Pf7tNtt1tbWeO/3z5oAGxsbPD09EY1GfIqiSCQS4TIwMABvb28EBQX5OwQC4O7u7p/jPY/HgziO837fmABeAIZhUK1Wic1NovdnZ2l6vV4n5+fneJ7H8PAwb3d3d2xtbXF9fc0mgOfz+bz5fP4Ak8n0wzAM3sj3+/2sr6+ztLTEysrKDz4+PvjW4/GoVquGRqPh0zSN/N3dXdJkMgHwW1xc5PX1ld1MJsvJyQkHBwc/zXc9NTU1hGGYH6f8AL8lLLOwIjCzAAAAAElFTkSuQmCC" />
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700|Roboto:300,400,700" rel="stylesheet">
     <style>
-        html {
-            box-sizing: border-box;
-            overflow: -moz-scrollbars-vertical;
-            overflow-y: scroll;
-        }
-        *, *:before, *:after {
-            box-sizing: inherit;
-        }
         body {
-            margin:0;
-            background: #fafafa;
+            margin: 0;
+            padding: 0;
         }
     </style>
 </head>
 <body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js"></script>
-    <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js"></script>
-    <script>
-        window.onload = function() {
-            const ui = SwaggerUIBundle({
-                url: '{{.JSONPath}}',
-                dom_id: '#swagger-ui',
-                deepLinking: true,
-                presets: [
-                    SwaggerUIBundle.presets.apis,
-                    SwaggerUIStandalonePreset
-                ],
-                plugins: [
-                    SwaggerUIBundle.plugins.DownloadUrl
-                ],
-                layout: "StandaloneLayout",
-                validatorUrl: null
-            });
-        };
-    </script>
+    <redoc spec-url='{{.JSONPath}}'></redoc>
+    <script src="https://cdn.jsdelivr.net/npm/redoc@2.1.3/bundles/redoc.standalone.js"></script>
 </body>
 </html>`
 
-	t := template.Must(template.New("swagger").Parse(tmpl))
+	t := template.Must(template.New("redoc").Parse(tmpl))
 	var buf strings.Builder
 	t.Execute(&buf, struct {
 		Title    string

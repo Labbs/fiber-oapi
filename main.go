@@ -49,9 +49,9 @@ func (o *OApiApp) setupDocsRoutes() {
 		return c.JSON(spec)
 	})
 
-	// Serve Swagger UI documentation
+	// Serve Redoc documentation
 	o.Get(o.Config().OpenAPIDocsPath, func(c *fiber.Ctx) error {
-		html := generateSwaggerHTML(o.Config().OpenAPIJSONPath, "API Documentation")
+		html := generateRedocHTML(o.Config().OpenAPIJSONPath, "API Documentation")
 		c.Set("Content-Type", "text/html")
 		return c.SendString(html)
 	})
