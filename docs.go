@@ -35,7 +35,7 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	}
 
 	// Serve OpenAPI JSON specification
-	o.Get(cfg.JSONPath, func(c *fiber.Ctx) error {
+	o.f.Get(cfg.JSONPath, func(c *fiber.Ctx) error {
 		spec := o.GenerateOpenAPISpec()
 
 		// Override info section with config values
@@ -50,7 +50,7 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	})
 
 	// Serve Redoc documentation
-	o.Get(cfg.DocsPath, func(c *fiber.Ctx) error {
+	o.f.Get(cfg.DocsPath, func(c *fiber.Ctx) error {
 		// Generate HTML with embedded Redoc
 		html := generateRedocHTML(cfg.JSONPath, cfg.Title)
 		c.Set("Content-Type", "text/html")
@@ -58,7 +58,7 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	})
 
 	// Serve additional docs routes (with trailing slash)
-	o.Get(cfg.DocsPath+"/", func(c *fiber.Ctx) error {
+	o.f.Get(cfg.DocsPath+"/", func(c *fiber.Ctx) error {
 		return c.Redirect(cfg.DocsPath)
 	})
 }
