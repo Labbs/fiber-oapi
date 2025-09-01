@@ -89,6 +89,26 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	schemas := make(map[string]interface{})
 	components["schemas"] = schemas
 
+	// First pass: collect all types that need schemas
+	allTypes := make(map[string]reflect.Type)
+
+	for _, op := range o.operations {
+		if op.InputType != nil {
+			collectAllTypes(op.InputType, allTypes)
+		}
+		if op.OutputType != nil {
+			collectAllTypes(op.OutputType, allTypes)
+		}
+		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
+			collectAllTypes(op.ErrorType, allTypes)
+		}
+	}
+
+	// Second pass: generate all schemas
+	for typeName, typeInfo := range allTypes {
+		schemas[typeName] = generateSchema(typeInfo)
+	}
+
 	for _, op := range o.operations {
 		// Convert Fiber path format (:param) to OpenAPI format ({param})
 		openAPIPath := convertFiberPathToOpenAPI(op.Path)
@@ -123,8 +143,6 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
 			if op.InputType != nil {
 				inputSchemaName := getTypeName(op.InputType)
-				inputSchema := generateSchema(op.InputType)
-				schemas[inputSchemaName] = inputSchema
 
 				enhancedOptions["requestBody"] = map[string]interface{}{
 					"required": true,
@@ -145,8 +163,6 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// Success response (200)
 		if op.OutputType != nil {
 			outputSchemaName := getTypeName(op.OutputType)
-			outputSchema := generateSchema(op.OutputType)
-			schemas[outputSchemaName] = outputSchema
 
 			responses["200"] = map[string]interface{}{
 				"description": "Successful response",
@@ -163,8 +179,6 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// Error response (400/500)
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
 			errorSchemaName := getTypeName(op.ErrorType)
-			errorSchema := generateSchema(op.ErrorType)
-			schemas[errorSchemaName] = errorSchema
 
 			responses["400"] = map[string]interface{}{
 				"description": "Validation error",
@@ -183,6 +197,55 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	}
 
 	return spec
+}
+
+// collectAllTypes recursively collects all types referenced by a given type
+func collectAllTypes(t reflect.Type, collected map[string]reflect.Type) {
+	if t == nil {
+		return
+	}
+
+	// Handle pointers
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	// Only process structs
+	if t.Kind() != reflect.Struct {
+		// For slices, process the element type
+		if t.Kind() == reflect.Slice {
+			collectAllTypes(t.Elem(), collected)
+		}
+		return
+	}
+
+	typeName := getTypeName(t)
+	if typeName == "" || typeName == "EmptyObject" {
+		return
+	}
+
+	// Skip if already processed
+	if _, exists := collected[typeName]; exists {
+		return
+	}
+
+	// Add this type
+	collected[typeName] = t
+
+	// Recursively collect types from all fields
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+
+		// Skip fields with json:"-" tag
+		if jsonTag := field.Tag.Get("json"); jsonTag == "-" {
+			continue
+		}
+
+		collectAllTypes(field.Type, collected)
+	}
 }
 
 // convertFiberPathToOpenAPI converts Fiber path format to OpenAPI format
