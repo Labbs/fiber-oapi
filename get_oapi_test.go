@@ -352,7 +352,7 @@ func TestGetOApi_Validation(t *testing.T) {
 	}
 
 	body2, _ := io.ReadAll(resp2.Body)
-	if !strings.Contains(string(body2), "Validation failed") {
+	if !strings.Contains(string(body2), "validation_error") {
 		t.Errorf("Expected validation error in response, got %s", string(body2))
 	}
 
@@ -416,7 +416,7 @@ func TestGetOApi_ValidationRequired(t *testing.T) {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "Validation failed") {
+	if !strings.Contains(string(body), "validation_error") {
 		t.Errorf("Expected validation error in response, got %s", string(body))
 	}
 }
