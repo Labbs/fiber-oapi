@@ -119,7 +119,7 @@ func TestAdvancedValidation_UserCreate(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "Validation failed") {
+				if !strings.Contains(bodyStr, "validation_error") {
 					t.Errorf("Expected validation error, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
@@ -208,7 +208,7 @@ func TestAdvancedValidation_Product(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "Validation failed") {
+				if !strings.Contains(bodyStr, "validation_error") {
 					t.Errorf("Expected validation error, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
@@ -250,7 +250,7 @@ func TestValidation_CustomMessages(t *testing.T) {
 	bodyStr := string(body)
 
 	// Check that we receive the validation error
-	if !strings.Contains(bodyStr, "Validation failed") {
+	if !strings.Contains(bodyStr, "validation_error") {
 		t.Errorf("Expected validation error, got %s", bodyStr)
 	}
 
