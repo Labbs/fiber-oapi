@@ -317,7 +317,7 @@ func TestDeleteOApi_Validation(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "Validation failed") {
+				if !strings.Contains(bodyStr, "validation_error") {
 					t.Errorf("Expected validation error, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
