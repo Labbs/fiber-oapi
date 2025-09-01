@@ -7,6 +7,10 @@ import (
 	fiberoapi "github.com/labbs/fiber-oapi"
 )
 
+type ContextRequest struct {
+	RequestId string `path:"requestId" validate:"required,min=2"`
+}
+
 type GetInput struct {
 	Name string `path:"name" validate:"required,min=2"`
 }
@@ -27,6 +31,8 @@ type CreateUserInput struct {
 	Email    string `json:"email" validate:"required,email"`
 	Age      int    `json:"age" validate:"required,min=13,max=120"`
 	Bio      string `json:"bio" validate:"omitempty,max=500"`
+
+	RequestContext ContextRequest `json:"requestContext" validate:"required,dive"`
 }
 
 type CreateUserOutput struct {
