@@ -18,7 +18,7 @@ func WithPermissions(options OpenAPIOptions, permissions ...string) OpenAPIOptio
 	return options
 }
 
-// WithResourceType définit le type de ressource concerné
+// WithResourceType defines the concerned resource type
 func WithResourceType(options OpenAPIOptions, resourceType string) OpenAPIOptions {
 	options.ResourceType = resourceType
 	return options
