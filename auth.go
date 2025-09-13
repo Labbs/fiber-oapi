@@ -8,7 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// AuthContext contient les informations d'authentification
+// AuthContext contains user authentication details
 type AuthContext struct {
 	UserID string                 `json:"user_id"`
 	Roles  []string               `json:"roles"`
@@ -16,28 +16,28 @@ type AuthContext struct {
 	Claims map[string]interface{} `json:"claims"`
 }
 
-// ResourcePermission définit les permissions sur une ressource
+// ResourcePermission defines permissions on a resource
 type ResourcePermission struct {
 	ResourceType string   `json:"resource_type"`
 	ResourceID   string   `json:"resource_id"`
 	Actions      []string `json:"actions"` // ["read", "write", "delete", "share"]
 }
 
-// AuthorizationService interface pour la vérification des permissions
+// AuthorizationService interface for permission checks
 type AuthorizationService interface {
-	// Authentification
+	// Authentication
 	ValidateToken(token string) (*AuthContext, error)
 
-	// Autorisation globale (rôles/scopes)
+	// Global authorization (roles/scopes)
 	HasRole(ctx *AuthContext, role string) bool
 	HasScope(ctx *AuthContext, scope string) bool
 
-	// Autorisation dynamique sur les ressources
+	// Dynamic authorization on resources
 	CanAccessResource(ctx *AuthContext, resourceType, resourceID, action string) (bool, error)
 	GetUserPermissions(ctx *AuthContext, resourceType, resourceID string) (*ResourcePermission, error)
 }
 
-// SecurityScheme pour OpenAPI
+// SecurityScheme for OpenAPI
 type SecurityScheme struct {
 	Type         string                 `json:"type"`
 	Scheme       string                 `json:"scheme,omitempty"`
@@ -110,13 +110,13 @@ func BearerTokenMiddleware(validator AuthorizationService) fiber.Handler {
 			})
 		}
 
-		// Stocker le contexte d'auth dans les locals
+		// Store auth context for later use
 		c.Locals("auth", authCtx)
 		return c.Next()
 	}
 }
 
-// RoleGuard middleware pour vérifier les rôles
+// RoleGuard middleware for role verification
 func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authCtx, err := GetAuthContext(c)
@@ -139,39 +139,39 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 	}
 }
 
-// validateAuthorization valide les autorisations basées sur les tags
+// validateAuthorization validates permissions based on tags
 func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService) error {
 	if authService == nil {
 		return nil
 	}
 
-	// Extraire et valider le token directement
+	// Extract and validate the token directly
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
 		return fmt.Errorf("authentication required")
 	}
 
-	// Vérifier le format Bearer
+	// Check Bearer format
 	if !strings.HasPrefix(authHeader, "Bearer ") {
 		return fmt.Errorf("invalid authorization header format")
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 
-	// Valider le token
+	// Validate the token
 	authCtx, err := authService.ValidateToken(token)
 	if err != nil {
 		return fmt.Errorf("invalid token: %v", err)
 	}
 
-	// Stocker le contexte d'auth pour utilisation ultérieure
+	// Store auth context for later use
 	c.Locals("auth", authCtx)
 
-	// Analyse les tags d'autorisation dans la struct
+	// Analyze authorization tags in the struct
 	return validateResourceAccess(c, authCtx, input, authService)
 }
 
-// validateResourceAccess valide l'accès aux ressources basé sur des tags
+// validateResourceAccess validates resource access based on tags
 func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{}, authService AuthorizationService) error {
 	inputValue := reflect.ValueOf(input)
 	inputType := reflect.TypeOf(input)
@@ -188,14 +188,14 @@ func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{
 	for i := 0; i < inputType.NumField(); i++ {
 		field := inputType.Field(i)
 
-		// Nouveaux tags pour l'autorisation
+		// New tags for authorization
 		if resourceTag := field.Tag.Get("resource"); resourceTag != "" {
 			actionTag := field.Tag.Get("action")
 			if actionTag == "" {
 				actionTag = inferActionFromMethod(c.Method())
 			}
 
-			// Obtenir la valeur de l'ID de la ressource
+			// Get the resource ID field value
 			fieldValue := inputValue.Field(i)
 			if fieldValue.Kind() == reflect.String {
 				resourceID := fieldValue.String()
@@ -215,7 +215,7 @@ func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{
 	return nil
 }
 
-// inferActionFromMethod déduit l'action à partir de la méthode HTTP
+// inferActionFromMethod infers the action from the HTTP method
 func inferActionFromMethod(method string) string {
 	switch method {
 	case "GET":
