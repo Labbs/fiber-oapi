@@ -1,6 +1,6 @@
 package fiberoapi
 
-// WithSecurity ajoute la sécurité à une route
+// WithSecurity adds security to a route
 func WithSecurity(options OpenAPIOptions, security interface{}) OpenAPIOptions {
 	options.Security = security
 	return options
