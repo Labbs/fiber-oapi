@@ -55,7 +55,7 @@ func (m *MockAuthService) ValidateToken(token string) (*AuthContext, error) {
 	if m.fail {
 		return nil, fmt.Errorf("mock auth service failure")
 	}
-	
+
 	auth, exists := m.tokens[token]
 	if !exists {
 		return nil, fmt.Errorf("invalid token: %s", token)
@@ -86,7 +86,7 @@ func (m *MockAuthService) CanAccessResource(ctx *AuthContext, resourceType, reso
 	if m.HasRole(ctx, "admin") {
 		return true, nil
 	}
-	
+
 	// Simple logic for testing
 	switch action {
 	case "read":
@@ -116,7 +116,7 @@ func (m *MockAuthService) GetUserPermissions(ctx *AuthContext, resourceType, res
 	if m.HasScope(ctx, "share") {
 		actions = append(actions, "share")
 	}
-	
+
 	return &ResourcePermission{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
@@ -146,7 +146,7 @@ type TestResponse struct {
 func TestAuthenticationMiddleware(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
-	
+
 	config := Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
@@ -163,11 +163,11 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			{"bearerAuth": {}},
 		},
 	}
-	
+
 	oapi := New(app, config)
 
 	t.Run("Public endpoint without auth", func(t *testing.T) {
-		Get(oapi, "/public", 
+		Get(oapi, "/public",
 			func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 				return TestResponse{
 					ID:      "public",
@@ -181,18 +181,18 @@ func TestAuthenticationMiddleware(t *testing.T) {
 
 		req := httptest.NewRequest("GET", "/public", nil)
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
 		}
 	})
 
 	t.Run("Protected endpoint without token", func(t *testing.T) {
-		Get(oapi, "/protected", 
+		Get(oapi, "/protected",
 			func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 				return TestResponse{
 					ID:      "protected",
@@ -205,18 +205,18 @@ func TestAuthenticationMiddleware(t *testing.T) {
 
 		req := httptest.NewRequest("GET", "/protected", nil)
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 400 {
 			t.Errorf("Expected status 400, got %d", resp.StatusCode)
 		}
 	})
 
 	t.Run("Protected endpoint with valid token", func(t *testing.T) {
-		Get(oapi, "/user-info", 
+		Get(oapi, "/user-info",
 			func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 				authCtx, _ := GetAuthContext(c)
 				return TestResponse{
@@ -231,18 +231,18 @@ func TestAuthenticationMiddleware(t *testing.T) {
 		req := httptest.NewRequest("GET", "/user-info", nil)
 		req.Header.Set("Authorization", "Bearer valid-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
 		}
 
 		var response TestResponse
 		json.NewDecoder(resp.Body).Decode(&response)
-		
+
 		if response.ID != "user-123" {
 			t.Errorf("Expected user ID user-123, got %s", response.ID)
 		}
@@ -252,11 +252,11 @@ func TestAuthenticationMiddleware(t *testing.T) {
 		req := httptest.NewRequest("GET", "/user-info", nil)
 		req.Header.Set("Authorization", "Bearer invalid-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 400 {
 			t.Errorf("Expected status 400, got %d", resp.StatusCode)
 		}
@@ -266,11 +266,11 @@ func TestAuthenticationMiddleware(t *testing.T) {
 		req := httptest.NewRequest("GET", "/user-info", nil)
 		req.Header.Set("Authorization", "Invalid format")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 400 {
 			t.Errorf("Expected status 400, got %d", resp.StatusCode)
 		}
@@ -280,20 +280,20 @@ func TestAuthenticationMiddleware(t *testing.T) {
 func TestRoleBasedAccess(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
-	
+
 	config := Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
 		AuthService:         authService,
 	}
-	
+
 	oapi := New(app, config)
 
 	// Endpoint requiring admin role
-	Delete(oapi, "/admin/:id", 
+	Delete(oapi, "/admin/:id",
 		func(c *fiber.Ctx, input TestRequest) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)
-			
+
 			// Check admin role manually in handler
 			if !authService.HasRole(authCtx, "admin") {
 				return TestResponse{}, &ErrorResponse{
@@ -302,7 +302,7 @@ func TestRoleBasedAccess(t *testing.T) {
 					Type:    "authorization_error",
 				}
 			}
-			
+
 			return TestResponse{
 				ID:      input.ID,
 				Message: "Admin action completed",
@@ -316,11 +316,11 @@ func TestRoleBasedAccess(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/admin/123", nil)
 		req.Header.Set("Authorization", "Bearer admin-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
 		}
@@ -330,11 +330,11 @@ func TestRoleBasedAccess(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/admin/123", nil)
 		req.Header.Set("Authorization", "Bearer valid-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 403 {
 			t.Errorf("Expected status 403, got %d", resp.StatusCode)
 		}
@@ -344,23 +344,23 @@ func TestRoleBasedAccess(t *testing.T) {
 func TestScopeBasedAccess(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
-	
+
 	config := Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
 		AuthService:         authService,
 	}
-	
+
 	oapi := New(app, config)
 
 	// Endpoint requiring write scope
-	Put(oapi, "/documents/:id", 
+	Put(oapi, "/documents/:id",
 		func(c *fiber.Ctx, input struct {
-			ID   string   `path:"id" validate:"required"`
-			Name string   `json:"name" validate:"required"`
+			ID   string `path:"id" validate:"required"`
+			Name string `json:"name" validate:"required"`
 		}) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)
-			
+
 			// Check write scope manually in handler
 			if !authService.HasScope(authCtx, "write") {
 				return TestResponse{}, &ErrorResponse{
@@ -369,7 +369,7 @@ func TestScopeBasedAccess(t *testing.T) {
 					Type:    "authorization_error",
 				}
 			}
-			
+
 			return TestResponse{
 				ID:      input.ID,
 				Message: fmt.Sprintf("Document updated: %s", input.Name),
@@ -381,16 +381,16 @@ func TestScopeBasedAccess(t *testing.T) {
 
 	t.Run("Write endpoint with write scope", func(t *testing.T) {
 		body := `{"name": "Test Document"}`
-		
+
 		req := httptest.NewRequest("PUT", "/documents/123", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", "Bearer valid-token")
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
 		}
@@ -398,16 +398,16 @@ func TestScopeBasedAccess(t *testing.T) {
 
 	t.Run("Write endpoint with readonly token", func(t *testing.T) {
 		body := `{"name": "Test Document"}`
-		
+
 		req := httptest.NewRequest("PUT", "/documents/123", bytes.NewReader([]byte(body)))
 		req.Header.Set("Authorization", "Bearer readonly-token")
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 403 {
 			t.Errorf("Expected status 403, got %d", resp.StatusCode)
 		}
@@ -417,20 +417,20 @@ func TestScopeBasedAccess(t *testing.T) {
 func TestPOSTWithoutBody(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
-	
+
 	config := Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
 		AuthService:         authService,
 	}
-	
+
 	oapi := New(app, config)
 
 	// POST endpoint without body (like share)
-	Post(oapi, "/documents/:id/share", 
+	Post(oapi, "/documents/:id/share",
 		func(c *fiber.Ctx, input TestRequest) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)
-			
+
 			return TestResponse{
 				ID:      input.ID,
 				Message: fmt.Sprintf("Document shared by %s", authCtx.UserID),
@@ -444,22 +444,22 @@ func TestPOSTWithoutBody(t *testing.T) {
 		req := httptest.NewRequest("POST", "/documents/123/share", nil)
 		req.Header.Set("Authorization", "Bearer valid-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
 		}
 
 		var response TestResponse
 		json.NewDecoder(resp.Body).Decode(&response)
-		
+
 		if response.ID != "123" {
 			t.Errorf("Expected document ID 123, got %s", response.ID)
 		}
-		
+
 		if response.Message != "Document shared by user-123" {
 			t.Errorf("Expected correct message, got %s", response.Message)
 		}
@@ -469,16 +469,16 @@ func TestPOSTWithoutBody(t *testing.T) {
 func TestGetAuthContext(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
-	
+
 	config := Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
 		AuthService:         authService,
 	}
-	
+
 	oapi := New(app, config)
 
-	Get(oapi, "/context-test", 
+	Get(oapi, "/context-test",
 		func(c *fiber.Ctx, input struct{}) (map[string]interface{}, *ErrorResponse) {
 			authCtx, err := GetAuthContext(c)
 			if err != nil {
@@ -488,7 +488,7 @@ func TestGetAuthContext(t *testing.T) {
 					Type:    "context_error",
 				}
 			}
-			
+
 			return map[string]interface{}{
 				"user_id": authCtx.UserID,
 				"roles":   authCtx.Roles,
@@ -503,22 +503,22 @@ func TestGetAuthContext(t *testing.T) {
 		req := httptest.NewRequest("GET", "/context-test", nil)
 		req.Header.Set("Authorization", "Bearer admin-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected status 200, got %d", resp.StatusCode)
 		}
 
 		var response map[string]interface{}
 		json.NewDecoder(resp.Body).Decode(&response)
-		
+
 		if response["user_id"] != "admin-456" {
 			t.Errorf("Expected user_id admin-456, got %v", response["user_id"])
 		}
-		
+
 		roles, ok := response["roles"].([]interface{})
 		if !ok || len(roles) != 2 {
 			t.Errorf("Expected 2 roles, got %v", response["roles"])
@@ -530,16 +530,16 @@ func TestAuthServiceFailure(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
 	authService.fail = true // Make auth service fail
-	
+
 	config := Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
 		AuthService:         authService,
 	}
-	
+
 	oapi := New(app, config)
 
-	Get(oapi, "/fail-test", 
+	Get(oapi, "/fail-test",
 		func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 			return TestResponse{
 				ID:      "test",
@@ -554,11 +554,11 @@ func TestAuthServiceFailure(t *testing.T) {
 		req := httptest.NewRequest("GET", "/fail-test", nil)
 		req.Header.Set("Authorization", "Bearer valid-token")
 		resp, err := app.Test(req)
-		
+
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		
+
 		if resp.StatusCode != 400 {
 			t.Errorf("Expected status 400, got %d", resp.StatusCode)
 		}
