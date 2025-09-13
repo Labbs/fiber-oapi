@@ -7,7 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// ConditionalAuthMiddleware crée un middleware qui s'applique seulement aux routes spécifiées
+// ConditionalAuthMiddleware creates middleware that applies only to specified routes
 func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		path := c.Path()
