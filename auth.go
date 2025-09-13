@@ -85,7 +85,7 @@ func RequireResourceAccess(c *fiber.Ctx, authService AuthorizationService, resou
 	return nil
 }
 
-// BearerTokenMiddleware crée un middleware JWT/Bearer
+// BearerTokenMiddleware creates a JWT/Bearer middleware
 func BearerTokenMiddleware(validator AuthorizationService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
