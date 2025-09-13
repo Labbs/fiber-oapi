@@ -29,7 +29,7 @@ func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...str
 	}
 }
 
-// SmartAuthMiddleware crée un middleware qui exclut automatiquement les routes de documentation
+// SmartAuthMiddleware creates middleware that automatically excludes documentation routes
 func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.Handler {
 	authMiddleware := BearerTokenMiddleware(authService)
 
