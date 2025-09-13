@@ -57,7 +57,7 @@ func GetAuthContext(c *fiber.Ctx) (*AuthContext, error) {
 	return auth, nil
 }
 
-// RequireResourceAccess vérifie les permissions dans les handlers
+// RequireResourceAccess checks permissions in handlers
 func RequireResourceAccess(c *fiber.Ctx, authService AuthorizationService, resourceType, resourceID, action string) error {
 	authCtx, err := GetAuthContext(c)
 	if err != nil {
