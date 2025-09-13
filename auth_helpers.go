@@ -6,13 +6,13 @@ func WithSecurity(options OpenAPIOptions, security interface{}) OpenAPIOptions {
 	return options
 }
 
-// WithSecurityDisabled désactive la sécurité pour une route
+// WithSecurityDisabled disables security for a route
 func WithSecurityDisabled(options OpenAPIOptions) OpenAPIOptions {
 	options.Security = "disabled"
 	return options
 }
 
-// WithPermissions ajoute les permissions requises pour documentation
+// WithPermissions adds required permissions for documentation
 func WithPermissions(options OpenAPIOptions, permissions ...string) OpenAPIOptions {
 	options.RequiredPermissions = append(options.RequiredPermissions, permissions...)
 	return options
@@ -24,7 +24,7 @@ func WithResourceType(options OpenAPIOptions, resourceType string) OpenAPIOption
 	return options
 }
 
-// SecureGet définit une route GET avec authentification
+// SecureGet defines a GET route with authentication
 func SecureGet[TInput any, TOutput any, TError any](
 	router OApiRouter,
 	path string,
@@ -32,7 +32,7 @@ func SecureGet[TInput any, TOutput any, TError any](
 	options OpenAPIOptions,
 	requiredPermissions ...string,
 ) {
-	// Ajouter les métadonnées de sécurité
+	// Add security metadata
 	options = WithSecurity(options, map[string][]string{
 		"bearerAuth": {},
 	})
@@ -41,7 +41,7 @@ func SecureGet[TInput any, TOutput any, TError any](
 	Get(router, path, handler, options)
 }
 
-// SecurePost définit une route POST avec authentification
+// SecurePost defines a POST route with authentication
 func SecurePost[TInput any, TOutput any, TError any](
 	router OApiRouter,
 	path string,
@@ -49,7 +49,7 @@ func SecurePost[TInput any, TOutput any, TError any](
 	options OpenAPIOptions,
 	requiredPermissions ...string,
 ) {
-	// Ajouter les métadonnées de sécurité
+	// Add security metadata
 	options = WithSecurity(options, map[string][]string{
 		"bearerAuth": {},
 	})
@@ -58,7 +58,7 @@ func SecurePost[TInput any, TOutput any, TError any](
 	Post(router, path, handler, options)
 }
 
-// SecurePut définit une route PUT avec authentification
+// SecurePut defines a PUT route with authentication
 func SecurePut[TInput any, TOutput any, TError any](
 	router OApiRouter,
 	path string,
@@ -66,7 +66,7 @@ func SecurePut[TInput any, TOutput any, TError any](
 	options OpenAPIOptions,
 	requiredPermissions ...string,
 ) {
-	// Ajouter les métadonnées de sécurité
+	// Add security metadata
 	options = WithSecurity(options, map[string][]string{
 		"bearerAuth": {},
 	})
@@ -75,7 +75,7 @@ func SecurePut[TInput any, TOutput any, TError any](
 	Put(router, path, handler, options)
 }
 
-// SecureDelete définit une route DELETE avec authentification
+// SecureDelete defines a DELETE route with authentication
 func SecureDelete[TInput any, TOutput any, TError any](
 	router OApiRouter,
 	path string,
@@ -83,7 +83,7 @@ func SecureDelete[TInput any, TOutput any, TError any](
 	options OpenAPIOptions,
 	requiredPermissions ...string,
 ) {
-	// Ajouter les métadonnées de sécurité
+	// Add security metadata
 	options = WithSecurity(options, map[string][]string{
 		"bearerAuth": {},
 	})
