@@ -25,7 +25,34 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 	// Use default config if none provided
 	cfg := DefaultConfig()
 	if len(config) > 0 {
-		cfg = config[0]
+		provided := config[0]
+
+		// Merge provided config with defaults
+		// Only override non-zero values from provided config
+		if provided.EnableValidation != cfg.EnableValidation {
+			cfg.EnableValidation = provided.EnableValidation
+		}
+		if provided.EnableOpenAPIDocs != cfg.EnableOpenAPIDocs {
+			cfg.EnableOpenAPIDocs = provided.EnableOpenAPIDocs
+		}
+		if provided.EnableAuthorization {
+			cfg.EnableAuthorization = provided.EnableAuthorization
+		}
+		if provided.OpenAPIDocsPath != "" {
+			cfg.OpenAPIDocsPath = provided.OpenAPIDocsPath
+		}
+		if provided.OpenAPIJSONPath != "" {
+			cfg.OpenAPIJSONPath = provided.OpenAPIJSONPath
+		}
+		if provided.AuthService != nil {
+			cfg.AuthService = provided.AuthService
+		}
+		if provided.SecuritySchemes != nil {
+			cfg.SecuritySchemes = provided.SecuritySchemes
+		}
+		if provided.DefaultSecurity != nil {
+			cfg.DefaultSecurity = provided.DefaultSecurity
+		}
 	}
 
 	oapi := &OApiApp{
@@ -42,7 +69,6 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 	return oapi
 }
 
-// setupDocsRoutes automatically configures the documentation routes
 func (o *OApiApp) setupDocsRoutes() {
 	// Serve OpenAPI JSON specification
 	o.f.Get(o.Config().OpenAPIJSONPath, func(c *fiber.Ctx) error {
@@ -88,6 +114,16 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	components := spec["components"].(map[string]interface{})
 	schemas := make(map[string]interface{})
 	components["schemas"] = schemas
+
+	// Add security schemes if configured
+	if len(o.config.SecuritySchemes) > 0 {
+		components["securitySchemes"] = o.config.SecuritySchemes
+	}
+
+	// Add default security if configured
+	if len(o.config.DefaultSecurity) > 0 {
+		spec["security"] = o.config.DefaultSecurity
+	}
 
 	// First pass: collect all types that need schemas
 	allTypes := make(map[string]reflect.Type)
@@ -139,18 +175,51 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			enhancedOptions["parameters"] = op.Options.Parameters
 		}
 
+		// Add security information
+		if op.Options.Security != nil {
+			if securityValue, ok := op.Options.Security.(string); ok && securityValue == "disabled" {
+				// Explicitly set empty security to override defaults
+				enhancedOptions["security"] = []map[string][]string{}
+			} else if securitySlice, ok := op.Options.Security.([]map[string][]string); ok {
+				enhancedOptions["security"] = securitySlice
+			}
+		}
+
+		// Add descriptions for required permissions
+		if len(op.Options.RequiredPermissions) > 0 {
+			desc := ""
+			if op.Options.Description != "" {
+				desc = op.Options.Description
+			}
+			desc += fmt.Sprintf("\n\n**Required Permissions:** %s", strings.Join(op.Options.RequiredPermissions, ", "))
+			enhancedOptions["description"] = desc
+		}
+
 		// Add request body schema for POST/PUT methods
 		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
 			if op.InputType != nil {
-				inputSchemaName := getTypeName(op.InputType)
+				inputType := op.InputType
+				if inputType.Kind() == reflect.Ptr {
+					inputType = inputType.Elem()
+				}
+
+				var schemaRef map[string]interface{}
+
+				// For map types, use inline schema instead of reference
+				if inputType.Kind() == reflect.Map {
+					schemaRef = generateSchema(inputType)
+				} else {
+					inputSchemaName := getTypeName(inputType)
+					schemaRef = map[string]interface{}{
+						"$ref": "#/components/schemas/" + inputSchemaName,
+					}
+				}
 
 				enhancedOptions["requestBody"] = map[string]interface{}{
 					"required": true,
 					"content": map[string]interface{}{
 						"application/json": map[string]interface{}{
-							"schema": map[string]interface{}{
-								"$ref": "#/components/schemas/" + inputSchemaName,
-							},
+							"schema": schemaRef,
 						},
 					},
 				}
@@ -162,15 +231,28 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 		// Success response (200)
 		if op.OutputType != nil {
-			outputSchemaName := getTypeName(op.OutputType)
+			outputType := op.OutputType
+			if outputType.Kind() == reflect.Ptr {
+				outputType = outputType.Elem()
+			}
+
+			var schemaRef map[string]interface{}
+
+			// For map types, use inline schema instead of reference
+			if outputType.Kind() == reflect.Map {
+				schemaRef = generateSchema(outputType)
+			} else {
+				outputSchemaName := getTypeName(outputType)
+				schemaRef = map[string]interface{}{
+					"$ref": "#/components/schemas/" + outputSchemaName,
+				}
+			}
 
 			responses["200"] = map[string]interface{}{
 				"description": "Successful response",
 				"content": map[string]interface{}{
 					"application/json": map[string]interface{}{
-						"schema": map[string]interface{}{
-							"$ref": "#/components/schemas/" + outputSchemaName,
-						},
+						"schema": schemaRef,
 					},
 				},
 			}
@@ -210,17 +292,8 @@ func collectAllTypes(t reflect.Type, collected map[string]reflect.Type) {
 		t = t.Elem()
 	}
 
-	// Only process structs
-	if t.Kind() != reflect.Struct {
-		// For slices, process the element type
-		if t.Kind() == reflect.Slice {
-			collectAllTypes(t.Elem(), collected)
-		}
-		return
-	}
-
 	typeName := getTypeName(t)
-	if typeName == "" || typeName == "EmptyObject" {
+	if typeName == "" {
 		return
 	}
 
@@ -229,22 +302,100 @@ func collectAllTypes(t reflect.Type, collected map[string]reflect.Type) {
 		return
 	}
 
-	// Add this type
-	collected[typeName] = t
-
-	// Recursively collect types from all fields
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		if !field.IsExported() {
-			continue
+	// Handle different kinds of types
+	switch t.Kind() {
+	case reflect.Struct:
+		// Only add structs that have a meaningful name
+		if typeName != "EmptyObject" && typeName != "AnonymousStruct" {
+			collected[typeName] = t
 		}
 
-		// Skip fields with json:"-" tag
-		if jsonTag := field.Tag.Get("json"); jsonTag == "-" {
-			continue
+		// Recursively collect types from all fields
+		for i := 0; i < t.NumField(); i++ {
+			field := t.Field(i)
+			if !field.IsExported() {
+				continue
+			}
+
+			// Skip fields with json:"-" tag
+			if jsonTag := field.Tag.Get("json"); jsonTag == "-" {
+				continue
+			}
+
+			collectAllTypes(field.Type, collected)
 		}
 
-		collectAllTypes(field.Type, collected)
+	case reflect.Map:
+		// Don't add map types as separate schemas - they're always inlined
+		// Just collect key and value types recursively
+		keyType := t.Key()
+		valueType := t.Elem()
+
+		collectAllTypes(keyType, collected)
+		collectAllTypes(valueType, collected)
+
+	case reflect.Slice:
+		// Add slice type for complex slices
+		if shouldGenerateSchemaForType(t) {
+			collected[typeName] = t
+		}
+
+		// Collect element type
+		collectAllTypes(t.Elem(), collected)
+
+	case reflect.Interface:
+		// For interface{}, we might want to document it
+		if t.NumMethod() == 0 && shouldGenerateSchemaForType(t) {
+			collected[typeName] = t
+		}
+
+	default:
+		// For basic types, we usually don't need separate schemas
+		// but if they have a name, they might be custom types
+		if t.Name() != "" && shouldGenerateSchemaForType(t) {
+			collected[typeName] = t
+		}
+	}
+}
+
+// shouldGenerateSchemaForType determines if a type should get its own schema
+func shouldGenerateSchemaForType(t reflect.Type) bool {
+	if t == nil {
+		return false
+	}
+
+	// Handle pointers
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	switch t.Kind() {
+	case reflect.Struct:
+		// Always generate schema for structs (except empty ones)
+		return t.NumField() > 0
+	case reflect.Map:
+		// Generate schema for maps with complex value types
+		valueType := t.Elem()
+		if valueType.Kind() == reflect.Ptr {
+			valueType = valueType.Elem()
+		}
+		return valueType.Kind() == reflect.Struct ||
+			valueType.Kind() == reflect.Map ||
+			valueType.Kind() == reflect.Slice
+	case reflect.Slice:
+		// Generate schema for slices of complex types
+		elemType := t.Elem()
+		if elemType.Kind() == reflect.Ptr {
+			elemType = elemType.Elem()
+		}
+		return elemType.Kind() == reflect.Struct ||
+			elemType.Kind() == reflect.Map
+	case reflect.Interface:
+		// Generate schema for interface{} to document it properly
+		return t.NumMethod() == 0
+	default:
+		// For basic types, only if they're named custom types
+		return t.Name() != "" && t.PkgPath() != ""
 	}
 }
 
@@ -274,16 +425,74 @@ func getTypeName(t reflect.Type) string {
 		t = t.Elem()
 	}
 
-	name := t.Name()
-	if name == "" {
-		// For anonymous structs, use the package path + "AnonymousStruct"
-		if t.Kind() == reflect.Struct {
-			return "AnonymousStruct"
+	// Handle different kinds of types
+	switch t.Kind() {
+	case reflect.Map:
+		// For maps, create a descriptive name
+		keyType := t.Key()
+		valueType := t.Elem()
+		return fmt.Sprintf("Map_%s_%s",
+			getSimpleTypeName(keyType),
+			getSimpleTypeName(valueType))
+	case reflect.Slice:
+		// For slices, create a descriptive name
+		elemType := t.Elem()
+		return fmt.Sprintf("Array_%s", getSimpleTypeName(elemType))
+	case reflect.Interface:
+		// For interfaces, use a generic name
+		if t.NumMethod() == 0 {
+			return "AnyValue" // interface{}
 		}
-		return t.Kind().String()
+		return "Interface"
+	default:
+		name := t.Name()
+		if name == "" {
+			// For anonymous structs, use the package path + "AnonymousStruct"
+			if t.Kind() == reflect.Struct {
+				return "AnonymousStruct"
+			}
+			return getSimpleTypeName(t)
+		}
+		return name
+	}
+}
+
+// getSimpleTypeName returns a simple name for basic types
+func getSimpleTypeName(t reflect.Type) string {
+	if t == nil {
+		return "Any"
 	}
 
-	return name
+	// Handle pointers
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	switch t.Kind() {
+	case reflect.String:
+		return "String"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return "Integer"
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "UInteger"
+	case reflect.Float32, reflect.Float64:
+		return "Number"
+	case reflect.Bool:
+		return "Boolean"
+	case reflect.Interface:
+		return "Any"
+	case reflect.Map:
+		return "Object"
+	case reflect.Slice:
+		return "Array"
+	case reflect.Struct:
+		if name := t.Name(); name != "" {
+			return name
+		}
+		return "Object"
+	default:
+		return "Any"
+	}
 }
 
 // generateSchema generates an OpenAPI schema from a Go type
@@ -355,6 +564,42 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 			schema["required"] = required
 		}
 
+	case reflect.Map:
+		// Handle map types (like map[string]string, map[string]interface{}) - use inline schemas
+		schema["type"] = "object"
+		keyType := t.Key()
+		valueType := t.Elem()
+
+		// For string keys, we can use additionalProperties
+		if keyType.Kind() == reflect.String {
+			if valueType.Kind() == reflect.Interface && valueType.NumMethod() == 0 {
+				// For interface{}, allow any type
+				schema["additionalProperties"] = true
+				schema["example"] = map[string]interface{}{
+					"string_key":  "string_value",
+					"number_key":  42,
+					"boolean_key": true,
+				}
+			} else {
+				schema["additionalProperties"] = generateFieldSchema(valueType)
+				// Add example for common map types
+				if valueType.Kind() == reflect.String {
+					schema["example"] = map[string]string{
+						"key1": "value1",
+						"key2": "value2",
+					}
+				}
+			}
+		} else {
+			// For non-string keys, treat as generic object
+			schema["additionalProperties"] = true
+		}
+
+	case reflect.Interface:
+		// Handle interface{} types - treat as any value
+		schema["description"] = "Any value (interface{})"
+		// Don't specify type to allow any JSON value
+
 	case reflect.String:
 		schema["type"] = "string"
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -370,7 +615,9 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 		schema["type"] = "array"
 		schema["items"] = generateFieldSchema(t.Elem())
 	default:
+		// Fallback for unknown types
 		schema["type"] = "object"
+		schema["description"] = fmt.Sprintf("Unknown type: %s", t.Kind().String())
 	}
 
 	return schema
@@ -400,12 +647,52 @@ func generateFieldSchema(t reflect.Type) map[string]interface{} {
 	case reflect.Slice:
 		schema["type"] = "array"
 		schema["items"] = generateFieldSchema(t.Elem())
+	case reflect.Map:
+		// Handle map types in fields - always use inline schemas to avoid reference issues
+		schema["type"] = "object"
+		keyType := t.Key()
+		valueType := t.Elem()
+
+		// For string keys, we can use additionalProperties
+		if keyType.Kind() == reflect.String {
+			if valueType.Kind() == reflect.Interface && valueType.NumMethod() == 0 {
+				// For interface{}, allow any type
+				schema["additionalProperties"] = true
+				schema["example"] = map[string]interface{}{
+					"string_key":  "string_value",
+					"number_key":  42,
+					"boolean_key": true,
+				}
+			} else {
+				schema["additionalProperties"] = generateFieldSchema(valueType)
+				// Add example for common map types
+				if valueType.Kind() == reflect.String {
+					schema["example"] = map[string]string{
+						"key": "value",
+					}
+				}
+			}
+		} else {
+			// For non-string keys, treat as generic object
+			schema["additionalProperties"] = true
+		}
+	case reflect.Interface:
+		// Handle interface{} types
+		schema["description"] = "Any value (interface{})"
+		// Don't specify type to allow any JSON value
 	case reflect.Struct:
 		// For nested structs, reference the type name
 		typeName := getTypeName(t)
-		schema["$ref"] = "#/components/schemas/" + typeName
+		if typeName == "" || typeName == "EmptyObject" {
+			// For anonymous or empty structs, inline as object
+			schema["type"] = "object"
+		} else {
+			schema["$ref"] = "#/components/schemas/" + typeName
+		}
 	default:
+		// Fallback for unknown types
 		schema["type"] = "object"
+		schema["description"] = fmt.Sprintf("Unsupported type: %s", t.Kind().String())
 	}
 
 	return schema
@@ -505,7 +792,7 @@ func Method[TInput any, TOutput any, TError any](
 
 	// Wrapper
 	fiberHandler := func(c *fiber.Ctx) error {
-		input, err := parseInput[TInput](app, c, fullPath)
+		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
 			return c.Status(400).JSON(ErrorResponse{
 				Code:    400,

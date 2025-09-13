@@ -19,7 +19,7 @@ func init() {
 
 // Function to parse input from the request
 // parseInput parses the input from the request
-func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string) (TInput, error) {
+func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *OpenAPIOptions) (TInput, error) {
 	var input TInput
 
 	// Parse path parameters if needed
@@ -34,12 +34,24 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string) (TInput, er
 		return input, err
 	}
 
-	// Parse body for POST/PUT methods
+	// Parse body for POST/PUT methods only if there's content
 	method := c.Method()
 	if method == "POST" || method == "PUT" || method == "PATCH" {
-		err = c.BodyParser(&input)
-		if err != nil {
-			return input, err
+		// Vérifier s'il y a du contenu dans le body
+		bodyLength := len(c.Body())
+		contentType := c.Get("Content-Type")
+
+		// Parser le body s'il y a du contenu OU si c'est un POST/PUT avec Content-Type spécifié
+		if bodyLength > 0 || strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
+			err = c.BodyParser(&input)
+			if err != nil {
+				// Pour les POST sans body, ignorer l'erreur de parsing
+				if bodyLength == 0 && method == "POST" {
+					// C'est OK, le POST n'a pas de body - ignorer l'erreur
+				} else {
+					return input, err
+				}
+			}
 		}
 	}
 
@@ -51,6 +63,19 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string) (TInput, er
 		}
 	}
 
+	// Validate authorization if enabled in configuration and not disabled for this route
+	if app.Config().EnableAuthorization && options != nil {
+		// Check if security is explicitly disabled for this route
+		if securityValue, ok := options.Security.(string); ok && securityValue == "disabled" {
+			// Skip authorization for this route
+		} else {
+			err = validateAuthorization(c, input, app.Config().AuthService)
+			if err != nil {
+				return input, err
+			}
+		}
+	}
+
 	return input, nil
 }
 
@@ -58,12 +83,23 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string) (TInput, er
 func handleCustomError(c *fiber.Ctx, customErr interface{}) error {
 	// Use reflection to extract error information
 	errValue := reflect.ValueOf(customErr)
-	// errType := reflect.TypeOf(customErr)
+
+	// Handle pointers - get the element they point to
+	if errValue.Kind() == reflect.Ptr {
+		if errValue.IsNil() {
+			return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+		}
+		errValue = errValue.Elem()
+	}
 
 	// Assume your error struct has fields like StatusCode and Message
 	statusCode := 500 // default
-	if field := errValue.FieldByName("StatusCode"); field.IsValid() && field.CanInt() {
-		statusCode = int(field.Int())
+	if errValue.Kind() == reflect.Struct {
+		if field := errValue.FieldByName("StatusCode"); field.IsValid() && field.CanInt() {
+			statusCode = int(field.Int())
+		} else if field := errValue.FieldByName("Code"); field.IsValid() && field.CanInt() {
+			statusCode = int(field.Int())
+		}
 	}
 
 	// Return the error as JSON

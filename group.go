@@ -20,6 +20,11 @@ func (g *OApiGroup) GetPrefix() string {
 	return g.prefix
 }
 
+// Use adds middleware to the OApiGroup
+func (g *OApiGroup) Use(middleware fiber.Handler) {
+	g.Router.Use(middleware)
+}
+
 // Group creates a new OApiGroup that wraps a fiber.Router
 func (app *OApiApp) Group(prefix string, handlers ...fiber.Handler) *OApiGroup {
 	// Create the actual fiber group
