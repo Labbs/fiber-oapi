@@ -37,17 +37,17 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 	// Parse body for POST/PUT methods only if there's content
 	method := c.Method()
 	if method == "POST" || method == "PUT" || method == "PATCH" {
-		// Vérifier s'il y a du contenu dans le body
+		// Check if there's content in the body
 		bodyLength := len(c.Body())
 		contentType := c.Get("Content-Type")
 
-		// Parser le body s'il y a du contenu OU si c'est un POST/PUT avec Content-Type spécifié
+		// Parse the body if there's content OR if it's a POST/PUT/PATCH with specified Content-Type
 		if bodyLength > 0 || strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
 			err = c.BodyParser(&input)
 			if err != nil {
-				// Pour les POST sans body, ignorer l'erreur de parsing
+				// For POST requests without a body, ignore the parsing error
 				if bodyLength == 0 && method == "POST" {
-					// C'est OK, le POST n'a pas de body - ignorer l'erreur
+					// It's OK, the POST has no body - ignore the error
 				} else {
 					return input, err
 				}
