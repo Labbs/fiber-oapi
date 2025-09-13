@@ -48,7 +48,7 @@ type SecurityScheme struct {
 	Flows        map[string]interface{} `json:"flows,omitempty"`
 }
 
-// GetAuthContext extrait le contexte d'auth depuis Fiber
+// GetAuthContext extracts the authentication context from Fiber
 func GetAuthContext(c *fiber.Ctx) (*AuthContext, error) {
 	auth, ok := c.Locals("auth").(*AuthContext)
 	if !ok {
