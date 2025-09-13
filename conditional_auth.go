@@ -1,7 +1,6 @@
 package fiberoapi
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -12,19 +11,14 @@ func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...str
 	return func(c *fiber.Ctx) error {
 		path := c.Path()
 
-		// Debug: afficher le chemin testé
-		fmt.Printf("🔍 Checking path: %s\n", path)
-
-		// Vérifier si le chemin est dans la liste d'exclusion
+		// Verify if the current path is in the exclude list
 		for _, excludePath := range excludePaths {
 			if path == excludePath || strings.HasPrefix(path, excludePath) {
-				fmt.Printf("✅ Path %s excluded from auth\n", path)
-				return c.Next() // Passer au suivant sans authentification
+				return c.Next() // Skip authentication
 			}
 		}
 
-		fmt.Printf("🔒 Path %s requires auth\n", path)
-		// Appliquer l'authentification pour tous les autres chemins
+		// Apply authentication middleware
 		return authMiddleware(c)
 	}
 }
@@ -33,7 +27,7 @@ func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...str
 func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.Handler {
 	authMiddleware := BearerTokenMiddleware(authService)
 
-	// Chemins à exclure de l'authentification
+	// Paths to exclude from authentication
 	excludePaths := []string{
 		config.OpenAPIDocsPath, // /docs
 		config.OpenAPIJSONPath, // /openapi.json
