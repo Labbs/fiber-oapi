@@ -28,16 +28,30 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		provided := config[0]
 
 		// Merge provided config with defaults
-		// Only override non-zero values from provided config
-		if provided.EnableValidation != cfg.EnableValidation {
+		// For boolean fields with true defaults, we need special handling
+		// We'll only override if the provided config appears to be intentionally configured
+
+		// Simple approach: if the provided config has any non-default values,
+		// we assume the user intended to configure it explicitly
+		hasExplicitConfig := provided.EnableAuthorization ||
+			provided.AuthService != nil ||
+			provided.SecuritySchemes != nil ||
+			provided.OpenAPIDocsPath != "" ||
+			provided.OpenAPIJSONPath != ""
+
+		// Only override boolean defaults if the config appears to be explicitly set
+		if hasExplicitConfig {
 			cfg.EnableValidation = provided.EnableValidation
-		}
-		if provided.EnableOpenAPIDocs != cfg.EnableOpenAPIDocs {
 			cfg.EnableOpenAPIDocs = provided.EnableOpenAPIDocs
 		}
+		// If no explicit config, keep the defaults (true, true, false)
+
+		// For EnableAuthorization: only set to true if explicitly provided
 		if provided.EnableAuthorization {
 			cfg.EnableAuthorization = provided.EnableAuthorization
 		}
+
+		// Non-boolean fields use the original logic
 		if provided.OpenAPIDocsPath != "" {
 			cfg.OpenAPIDocsPath = provided.OpenAPIDocsPath
 		}
