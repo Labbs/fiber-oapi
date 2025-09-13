@@ -85,7 +85,7 @@ func TestConditionalAuthMiddleware(t *testing.T) {
 
 	t.Run("Excluded paths skip authentication", func(t *testing.T) {
 		conditionalMiddleware := ConditionalAuthMiddleware(authMiddleware, "/docs", "/health")
-		
+
 		app := fiber.New()
 		app.Use(conditionalMiddleware)
 		app.Get("/docs", func(c *fiber.Ctx) error {
@@ -145,9 +145,9 @@ func TestAuthHelpers(t *testing.T) {
 	t.Run("WithSecurity sets security options", func(t *testing.T) {
 		options := OpenAPIOptions{Summary: "Test"}
 		security := []map[string][]string{{"bearerAuth": {}}}
-		
+
 		result := WithSecurity(options, security)
-		
+
 		if result.Security == nil {
 			t.Error("Expected security to be set")
 		}
@@ -155,9 +155,9 @@ func TestAuthHelpers(t *testing.T) {
 
 	t.Run("WithSecurityDisabled disables security", func(t *testing.T) {
 		options := OpenAPIOptions{Summary: "Test"}
-		
+
 		result := WithSecurityDisabled(options)
-		
+
 		if result.Security != "disabled" {
 			t.Errorf("Expected security to be 'disabled', got %v", result.Security)
 		}
@@ -165,9 +165,9 @@ func TestAuthHelpers(t *testing.T) {
 
 	t.Run("WithPermissions adds permissions", func(t *testing.T) {
 		options := OpenAPIOptions{Summary: "Test"}
-		
+
 		result := WithPermissions(options, "read", "write")
-		
+
 		if len(result.RequiredPermissions) != 2 {
 			t.Errorf("Expected 2 permissions, got %d", len(result.RequiredPermissions))
 		}
@@ -178,9 +178,9 @@ func TestAuthHelpers(t *testing.T) {
 
 	t.Run("WithResourceType sets resource type", func(t *testing.T) {
 		options := OpenAPIOptions{Summary: "Test"}
-		
+
 		result := WithResourceType(options, "document")
-		
+
 		if result.ResourceType != "document" {
 			t.Errorf("Expected ResourceType to be 'document', got %s", result.ResourceType)
 		}
@@ -293,7 +293,7 @@ func TestMockAuthService(t *testing.T) {
 
 	t.Run("HasRole checks roles correctly", func(t *testing.T) {
 		ctx, _ := authService.ValidateToken("admin-token")
-		
+
 		if !authService.HasRole(ctx, "admin") {
 			t.Error("Expected admin token to have admin role")
 		}
@@ -307,7 +307,7 @@ func TestMockAuthService(t *testing.T) {
 
 	t.Run("HasScope checks scopes correctly", func(t *testing.T) {
 		ctx, _ := authService.ValidateToken("readonly-token")
-		
+
 		if !authService.HasScope(ctx, "read") {
 			t.Error("Expected readonly token to have read scope")
 		}
@@ -318,7 +318,7 @@ func TestMockAuthService(t *testing.T) {
 
 	t.Run("CanAccessResource with admin", func(t *testing.T) {
 		ctx, _ := authService.ValidateToken("admin-token")
-		
+
 		canAccess, err := authService.CanAccessResource(ctx, "document", "doc-123", "delete")
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
@@ -330,7 +330,7 @@ func TestMockAuthService(t *testing.T) {
 
 	t.Run("CanAccessResource with regular user", func(t *testing.T) {
 		ctx, _ := authService.ValidateToken("valid-token")
-		
+
 		canAccess, err := authService.CanAccessResource(ctx, "document", "doc-123", "delete")
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
@@ -342,7 +342,7 @@ func TestMockAuthService(t *testing.T) {
 
 	t.Run("GetUserPermissions returns correct permissions", func(t *testing.T) {
 		ctx, _ := authService.ValidateToken("valid-token")
-		
+
 		perms, err := authService.GetUserPermissions(ctx, "document", "doc-123")
 		if err != nil {
 			t.Errorf("Expected no error, got %v", err)
