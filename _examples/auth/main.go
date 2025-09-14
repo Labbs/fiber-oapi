@@ -8,7 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Service d'authentification avec gestion des rôles
+// Authentication service with role management
 type ExampleAuthService struct{}
 
 func (s *ExampleAuthService) ValidateToken(token string) (*fiberoapi.AuthContext, error) {
