@@ -33,6 +33,16 @@ func (o *OApiApp) Config() Config {
 	return o.config
 }
 
+// Use adds middleware to the OApiApp
+func (o *OApiApp) Use(middleware fiber.Handler) {
+	o.f.Use(middleware)
+}
+
+// Listen starts the server on the given address
+func (o *OApiApp) Listen(addr string) error {
+	return o.f.Listen(addr)
+}
+
 // HandlerFunc represents a handler function with typed input and output
 type HandlerFunc[TInput any, TOutput any, TError any] func(c *fiber.Ctx, input TInput) (TOutput, TError)
 
@@ -45,19 +55,26 @@ type PathInfo struct {
 
 // Config represents configuration for the OApi wrapper
 type Config struct {
-	EnableValidation  bool   // Enable request validation (default: true)
-	EnableOpenAPIDocs bool   // Enable automatic docs setup (default: true)
-	OpenAPIDocsPath   string // Path for documentation UI (default: "/docs")
-	OpenAPIJSONPath   string // Path for OpenAPI JSON spec (default: "/openapi.json")
+	EnableValidation    bool                      // Enable request validation (default: true)
+	EnableOpenAPIDocs   bool                      // Enable automatic docs setup (default: true)
+	EnableAuthorization bool                      // Enable authorization validation (default: false)
+	OpenAPIDocsPath     string                    // Path for documentation UI (default: "/docs")
+	OpenAPIJSONPath     string                    // Path for OpenAPI JSON spec (default: "/openapi.json")
+	AuthService         AuthorizationService      // Service for handling authentication and authorization
+	SecuritySchemes     map[string]SecurityScheme // OpenAPI security schemes
+	DefaultSecurity     []map[string][]string     // Default security requirements
 }
 
 // OpenAPIOptions represents options for OpenAPI operations
 type OpenAPIOptions struct {
-	OperationID string                   `json:"operationId,omitempty"`
-	Tags        []string                 `json:"tags,omitempty"`
-	Summary     string                   `json:"summary,omitempty"`
-	Description string                   `json:"description,omitempty"`
-	Parameters  []map[string]interface{} `json:"parameters,omitempty"`
+	OperationID         string                   `json:"operationId,omitempty"`
+	Tags                []string                 `json:"tags,omitempty"`
+	Summary             string                   `json:"summary,omitempty"`
+	Description         string                   `json:"description,omitempty"`
+	Parameters          []map[string]interface{} `json:"parameters,omitempty"`
+	Security            interface{}              `json:"security,omitempty"` // Can be []map[string][]string or "disabled"
+	RequiredPermissions []string                 `json:"-"`                  // Ex: ["document:read", "workspace:admin"]
+	ResourceType        string                   `json:"-"`                  // Type de ressource concernée
 }
 
 // OpenAPIOperation represents a registered operation
