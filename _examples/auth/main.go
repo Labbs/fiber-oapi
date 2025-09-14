@@ -83,7 +83,7 @@ func (s *ExampleAuthService) CanAccessResource(ctx *fiberoapi.AuthContext, resou
 		return true, nil
 	}
 
-	// Logique simple pour l'exemple
+	// Simple logic for the example
 	if resourceType == "document" {
 		if action == "delete" {
 			return s.HasRole(ctx, "admin"), nil
