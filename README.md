@@ -8,6 +8,8 @@ A Go library that extends Fiber to add automatic OpenAPI documentation generatio
 - ✅ **Group support** with OpenAPI methods available on both app and groups
 - ✅ **Unified API** with interface-based approach for seamless app/group usage
 - ✅ **Powerful validation** via `github.com/go-playground/validator/v10`
+- ✅ **Authentication & Authorization** with JWT/Bearer token support and role-based access control
+- ✅ **OpenAPI Security** documentation with automatic security scheme generation
 - ✅ **Type safety** with Go generics
 - ✅ **Custom error handling**
 - ✅ **OpenAPI documentation generation** with automatic schema generation
@@ -78,10 +80,11 @@ func main() {
     
     // Custom configuration
     config := fiberoapi.Config{
-        EnableValidation:  true,                // Enable input validation
-        EnableOpenAPIDocs: true,                // Enable automatic docs setup
-        OpenAPIDocsPath:   "/documentation",    // Custom docs path
-        OpenAPIJSONPath:   "/api-spec.json",    // Custom spec path
+        EnableValidation:    true,               // Enable input validation
+        EnableOpenAPIDocs:   true,               // Enable automatic docs setup
+        EnableAuthorization: false,              // Enable authentication (default: false)
+        OpenAPIDocsPath:     "/docs",            // Custom docs path (default: /docs)
+        OpenAPIJSONPath:     "/openapi.json",    // Custom spec path (default: /openapi.json)
     }
     oapi := fiberoapi.New(app, config)
 
@@ -238,16 +241,415 @@ fiberoapi.Delete(oapi, "/users/:id",
     })
 ```
 
+## Authentication & Authorization
+
+Fiber-oapi provides comprehensive authentication and authorization support with JWT/Bearer tokens, role-based access control, and automatic OpenAPI security documentation.
+
+### Basic Authentication Setup
+
+First, implement the `AuthorizationService` interface:
+
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+    fiberoapi "github.com/labbs/fiber-oapi"
+    "github.com/gofiber/fiber/v2"
+)
+
+// Implement the AuthorizationService interface
+type MyAuthService struct{}
+
+func (s *MyAuthService) ValidateToken(token string) (*fiberoapi.AuthContext, error) {
+    // Validate your JWT token here
+    switch token {
+    case "admin-token":
+        return &fiberoapi.AuthContext{
+            UserID: "admin-123",
+            Roles:  []string{"admin", "user"},
+            Scopes: []string{"read", "write", "delete"},
+            Claims: map[string]interface{}{
+                "sub": "admin-123",
+                "exp": time.Now().Add(time.Hour).Unix(),
+            },
+        }, nil
+    case "user-token":
+        return &fiberoapi.AuthContext{
+            UserID: "user-789",
+            Roles:  []string{"user"},
+            Scopes: []string{"read", "write"},
+            Claims: map[string]interface{}{
+                "sub": "user-789",
+                "exp": time.Now().Add(time.Hour).Unix(),
+            },
+        }, nil
+    default:
+        return nil, fmt.Errorf("invalid token")
+    }
+}
+
+func (s *MyAuthService) HasRole(ctx *fiberoapi.AuthContext, role string) bool {
+    for _, r := range ctx.Roles {
+        if r == role {
+            return true
+        }
+    }
+    return false
+}
+
+func (s *MyAuthService) HasScope(ctx *fiberoapi.AuthContext, scope string) bool {
+    for _, sc := range ctx.Scopes {
+        if sc == scope {
+            return true
+        }
+    }
+    return false
+}
+
+func (s *MyAuthService) CanAccessResource(ctx *fiberoapi.AuthContext, resourceType, resourceID, action string) (bool, error) {
+    // Admins can do everything
+    if s.HasRole(ctx, "admin") {
+        return true, nil
+    }
+    
+    // Custom resource-based logic
+    if resourceType == "document" && action == "delete" {
+        return false, nil // Only admins can delete
+    }
+    
+    return s.HasScope(ctx, action), nil
+}
+
+func (s *MyAuthService) GetUserPermissions(ctx *fiberoapi.AuthContext, resourceType, resourceID string) (*fiberoapi.ResourcePermission, error) {
+    actions := []string{}
+    if s.HasScope(ctx, "read") {
+        actions = append(actions, "read")
+    }
+    if s.HasScope(ctx, "write") {
+        actions = append(actions, "write")
+    }
+    if s.HasRole(ctx, "admin") {
+        actions = append(actions, "delete")
+    }
+    
+    return &fiberoapi.ResourcePermission{
+        ResourceType: resourceType,
+        ResourceID:   resourceID,
+        Actions:      actions,
+    }, nil
+}
+
+func main() {
+    app := fiber.New()
+    authService := &MyAuthService{}
+
+    // Configure with authentication
+    config := fiberoapi.Config{
+        EnableValidation:    true,
+        EnableOpenAPIDocs:   true,
+        EnableAuthorization: true,
+        AuthService:         authService,
+        SecuritySchemes: map[string]fiberoapi.SecurityScheme{
+            "bearerAuth": {
+                Type:         "http",
+                Scheme:       "bearer",
+                BearerFormat: "JWT",
+                Description:  "JWT Bearer token",
+            },
+        },
+        DefaultSecurity: []map[string][]string{
+            {"bearerAuth": {}},
+        },
+    }
+
+    oapi := fiberoapi.New(app, config)
+
+    // Your authenticated routes here...
+
+    oapi.Listen(":3000")
+}
+```
+
+### Public vs Protected Routes
+
+```go
+// Public route (no authentication required)
+fiberoapi.Get(oapi, "/health",
+    func(c *fiber.Ctx, input struct{}) (map[string]string, *fiberoapi.ErrorResponse) {
+        return map[string]string{"status": "ok"}, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary:  "Health check",
+        Security: "disabled", // Explicitly disable auth for this route
+    })
+
+// Protected route (authentication required by default)
+fiberoapi.Get(oapi, "/profile",
+    func(c *fiber.Ctx, input struct{}) (UserProfile, *fiberoapi.ErrorResponse) {
+        // Get authenticated user context
+        authCtx, err := fiberoapi.GetAuthContext(c)
+        if err != nil {
+            return UserProfile{}, &fiberoapi.ErrorResponse{
+                Code:    401,
+                Details: "Authentication required",
+                Type:    "auth_error",
+            }
+        }
+
+        return UserProfile{
+            UserID: authCtx.UserID,
+            Roles:  authCtx.Roles,
+        }, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary: "Get user profile",
+        Tags:    []string{"user"},
+    })
+```
+
+### Role-Based Access Control
+
+```go
+type DocumentRequest struct {
+    DocumentID string `path:"documentId" validate:"required"`
+}
+
+type DocumentResponse struct {
+    ID      string `json:"id"`
+    Title   string `json:"title"`
+    Content string `json:"content"`
+}
+
+// Route requiring specific role
+fiberoapi.Get(oapi, "/documents/:documentId",
+    func(c *fiber.Ctx, input DocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
+        authCtx, _ := fiberoapi.GetAuthContext(c)
+
+        // Check if user has required role
+        if !authService.HasRole(authCtx, "user") {
+            return DocumentResponse{}, &fiberoapi.ErrorResponse{
+                Code:    403,
+                Details: "User role required",
+                Type:    "authorization_error",
+            }
+        }
+
+        // Check if user has required scope
+        if !authService.HasScope(authCtx, "read") {
+            return DocumentResponse{}, &fiberoapi.ErrorResponse{
+                Code:    403,
+                Details: "Read permission required",
+                Type:    "authorization_error",
+            }
+        }
+
+        return DocumentResponse{
+            ID:      input.DocumentID,
+            Title:   "Document Title",
+            Content: "Document content",
+        }, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary:     "Get document",
+        Description: "Requires 'user' role and 'read' scope",
+        Tags:        []string{"documents"},
+    })
+
+// Admin-only route
+fiberoapi.Delete(oapi, "/documents/:documentId",
+    func(c *fiber.Ctx, input DocumentRequest) (map[string]bool, *fiberoapi.ErrorResponse) {
+        authCtx, _ := fiberoapi.GetAuthContext(c)
+
+        // Only admins can delete
+        if !authService.HasRole(authCtx, "admin") {
+            return nil, &fiberoapi.ErrorResponse{
+                Code:    403,
+                Details: "Admin role required",
+                Type:    "authorization_error",
+            }
+        }
+
+        return map[string]bool{"deleted": true}, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary:     "Delete document",
+        Description: "Admin only - requires 'admin' role",
+        Tags:        []string{"documents", "admin"},
+    })
+```
+
+### Security Helpers
+
+Use the helper functions to simplify security configuration:
+
+```go
+// Add security to existing options
+options := fiberoapi.OpenAPIOptions{Summary: "Protected endpoint"}
+options = fiberoapi.WithSecurity(options, map[string][]string{
+    "bearerAuth": {},
+})
+
+// Disable security for specific route
+options = fiberoapi.WithSecurityDisabled(options)
+
+// Add required permissions for documentation
+options = fiberoapi.WithPermissions(options, "document:read", "workspace:admin")
+
+// Set resource type for documentation
+options = fiberoapi.WithResourceType(options, "document")
+```
+
+### Authentication Context
+
+Access the authenticated user's information in your handlers:
+
+```go
+fiberoapi.Post(oapi, "/posts",
+    func(c *fiber.Ctx, input CreatePostInput) (PostResponse, *fiberoapi.ErrorResponse) {
+        // Get authenticated user context
+        authCtx, err := fiberoapi.GetAuthContext(c)
+        if err != nil {
+            return PostResponse{}, &fiberoapi.ErrorResponse{
+                Code:    401,
+                Details: "Authentication required",
+                Type:    "auth_error",
+            }
+        }
+
+        // Use auth context
+        fmt.Printf("User %s with roles %v creating post\n", authCtx.UserID, authCtx.Roles)
+
+        // Access JWT claims if needed
+        if exp, ok := authCtx.Claims["exp"].(int64); ok {
+            if time.Now().Unix() > exp {
+                return PostResponse{}, &fiberoapi.ErrorResponse{
+                    Code:    401,
+                    Details: "Token expired",
+                    Type:    "auth_error",
+                }
+            }
+        }
+
+        return PostResponse{
+            ID:     "post-123",
+            Author: authCtx.UserID,
+            Title:  input.Title,
+        }, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary: "Create a post",
+        Tags:    []string{"posts"},
+    })
+```
+
+### OpenAPI Security Documentation
+
+When authentication is enabled, the OpenAPI specification automatically includes:
+
+- **Security Schemes**: JWT Bearer token configuration
+- **Security Requirements**: Applied to protected endpoints
+- **Security Overrides**: Public endpoints marked with `security: []`
+
+```json
+{
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT Bearer token"
+      }
+    }
+  },
+  "security": [
+    {"bearerAuth": []}
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "security": [],
+        "summary": "Health check"
+      }
+    },
+    "/profile": {
+      "get": {
+        "security": [{"bearerAuth": []}],
+        "summary": "Get user profile"
+      }
+    }
+  }
+}
+```
+
+### Testing with Authentication
+
+```bash
+# Public endpoint
+curl http://localhost:3000/health
+
+# Protected endpoint
+curl -H "Authorization: Bearer your-jwt-token" http://localhost:3000/profile
+
+# Admin endpoint
+curl -H "Authorization: Bearer admin-token" -X DELETE http://localhost:3000/documents/123
+```
+
+### Error Responses
+
+Authentication errors are automatically formatted:
+
+```json
+{
+  "code": 401,
+  "details": "Invalid token",
+  "type": "auth_error"
+}
+```
+
+```json
+{
+  "code": 403,
+  "details": "Admin role required",
+  "type": "authorization_error"
+}
+```
+
+### Complete Authentication Example
+
+See the complete working example in `_examples/auth/main.go` which demonstrates:
+- Multiple user types with different roles and scopes
+- Role-based access control
+- Scope-based permissions
+- Resource-level authorization
+- OpenAPI security documentation
+- Public and protected endpoints
+
+```go
+// Clone the repository and run the auth example
+go run _examples/auth/main.go
+
+// Visit http://localhost:3002/docs to see the documentation
+// Test with different tokens: admin-token, user-token, readonly-token
+```
+```
+
 ## Configuration
 
 The library supports flexible configuration through the `Config` struct:
 
 ```go
 type Config struct {
-    EnableValidation  bool   // Enable/disable input validation (default: true)
-    EnableOpenAPIDocs bool   // Enable automatic docs setup (default: true)
-    OpenAPIDocsPath   string // Path for documentation UI (default: "/docs")
-    OpenAPIJSONPath   string // Path for OpenAPI JSON spec (default: "/openapi.json")
+    EnableValidation    bool                      // Enable/disable input validation (default: true)
+    EnableOpenAPIDocs   bool                      // Enable automatic docs setup (default: true)
+    EnableAuthorization bool                      // Enable authentication/authorization (default: false)
+    OpenAPIDocsPath     string                    // Path for documentation UI (default: "/docs")
+    OpenAPIJSONPath     string                    // Path for OpenAPI JSON spec (default: "/openapi.json")
+    AuthService         AuthorizationService      // Service for handling auth
+    SecuritySchemes     map[string]SecurityScheme // OpenAPI security schemes
+    DefaultSecurity     []map[string][]string     // Default security requirements
 }
 ```
 
@@ -255,7 +657,8 @@ type Config struct {
 
 If no configuration is provided, the library uses these defaults:
 - Validation: **enabled**
-- Documentation: **enabled**
+- Documentation: **enabled** 
+- Authorization: **disabled**
 - Docs path: `/docs`
 - JSON spec path: `/openapi.json`
 
@@ -274,6 +677,16 @@ config := fiberoapi.Config{
     EnableOpenAPIDocs: true,
     OpenAPIDocsPath:   "/api-docs",
     OpenAPIJSONPath:   "/openapi.json",
+}
+
+// Enable authentication with custom paths
+config := fiberoapi.Config{
+    EnableValidation:    true,
+    EnableOpenAPIDocs:   true,
+    EnableAuthorization: true,
+    AuthService:         &MyAuthService{},
+    OpenAPIDocsPath:     "/documentation",
+    OpenAPIJSONPath:     "/openapi.json",
 }
 ```
 
