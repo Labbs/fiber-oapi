@@ -78,7 +78,7 @@ func (s *ExampleAuthService) HasScope(ctx *fiberoapi.AuthContext, scope string) 
 }
 
 func (s *ExampleAuthService) CanAccessResource(ctx *fiberoapi.AuthContext, resourceType, resourceID, action string) (bool, error) {
-	// Les admins peuvent tout faire
+	// Admins can do everything
 	if s.HasRole(ctx, "admin") {
 		return true, nil
 	}
