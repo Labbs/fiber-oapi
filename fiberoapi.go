@@ -19,8 +19,6 @@ func DefaultConfig() Config {
 		OpenAPIDocsPath:   "/docs",
 		OpenAPIJSONPath:   "/openapi.json",
 		OpenAPIYamlPath:   "/openapi.yaml",
-		// EnableAuthorization defaults to false
-		EnableAuthorization: false,
 	}
 }
 
