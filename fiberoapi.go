@@ -105,7 +105,7 @@ func (o *OApiApp) setupDocsRoutes() {
 		if err != nil {
 			return err
 		}
-		c.Set("Content-Type", "application/x-yaml")
+		c.Set("Content-Type", "application/yaml")
 		return c.SendString(spec)
 	})
 
