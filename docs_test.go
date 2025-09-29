@@ -67,6 +67,7 @@ func TestSetupDocs_CustomConfig(t *testing.T) {
 		Version:     "2.0.0",
 		DocsPath:    "/api-docs",
 		JSONPath:    "/api-spec.json",
+		YamlPath:    "/api-spec.yaml",
 	}
 	oapi.SetupDocs(customConfig)
 
