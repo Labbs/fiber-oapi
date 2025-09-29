@@ -31,6 +31,7 @@ func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.
 	excludePaths := []string{
 		config.OpenAPIDocsPath, // /docs
 		config.OpenAPIJSONPath, // /openapi.json
+		config.OpenAPIYamlPath, // /openapi.yaml
 	}
 
 	return ConditionalAuthMiddleware(authMiddleware, excludePaths...)
