@@ -85,6 +85,7 @@ func main() {
         EnableAuthorization: false,              // Enable authentication (default: false)
         OpenAPIDocsPath:     "/docs",            // Custom docs path (default: /docs)
         OpenAPIJSONPath:     "/openapi.json",    // Custom spec path (default: /openapi.json)
+        OpenAPIYamlPath:     "/openapi.yaml",    // Custom spec path (default: /openapi.yaml)
     }
     oapi := fiberoapi.New(app, config)
 
