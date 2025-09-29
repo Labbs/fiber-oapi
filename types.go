@@ -60,6 +60,7 @@ type Config struct {
 	EnableAuthorization bool                      // Enable authorization validation (default: false)
 	OpenAPIDocsPath     string                    // Path for documentation UI (default: "/docs")
 	OpenAPIJSONPath     string                    // Path for OpenAPI JSON spec (default: "/openapi.json")
+	OpenAPIYamlPath     string                    // Path for OpenAPI YAML spec (default: "/openapi.yaml")
 	AuthService         AuthorizationService      // Service for handling authentication and authorization
 	SecuritySchemes     map[string]SecurityScheme // OpenAPI security schemes
 	DefaultSecurity     []map[string][]string     // Default security requirements
