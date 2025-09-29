@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"gopkg.in/yaml.v3"
 )
 
 // DefaultConfig returns the default configuration
@@ -17,6 +18,7 @@ func DefaultConfig() Config {
 		EnableOpenAPIDocs: true,
 		OpenAPIDocsPath:   "/docs",
 		OpenAPIJSONPath:   "/openapi.json",
+		OpenAPIYamlPath:   "/openapi.yaml",
 	}
 }
 
@@ -37,7 +39,8 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.AuthService != nil ||
 			provided.SecuritySchemes != nil ||
 			provided.OpenAPIDocsPath != "" ||
-			provided.OpenAPIJSONPath != ""
+			provided.OpenAPIJSONPath != "" ||
+			provided.OpenAPIYamlPath != ""
 
 		// Only override boolean defaults if the config appears to be explicitly set
 		if hasExplicitConfig {
@@ -57,6 +60,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		if provided.OpenAPIJSONPath != "" {
 			cfg.OpenAPIJSONPath = provided.OpenAPIJSONPath
+		}
+		if provided.OpenAPIYamlPath != "" {
+			cfg.OpenAPIYamlPath = provided.OpenAPIYamlPath
 		}
 		if provided.AuthService != nil {
 			cfg.AuthService = provided.AuthService
@@ -89,6 +95,16 @@ func (o *OApiApp) setupDocsRoutes() {
 		spec := o.GenerateOpenAPISpec()
 		c.Set("Content-Type", "application/json")
 		return c.JSON(spec)
+	})
+
+	// Serve OpenAPI YAML specification
+	o.f.Get(o.Config().OpenAPIYamlPath, func(c *fiber.Ctx) error {
+		spec, err := o.GenerateOpenAPISpecYAML()
+		if err != nil {
+			return err
+		}
+		c.Set("Content-Type", "application/yaml")
+		return c.SendString(spec)
 	})
 
 	// Serve Redoc documentation
@@ -293,6 +309,16 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	}
 
 	return spec
+}
+
+// GenerateOpenAPISpecYAML generates the OpenAPI spec in YAML format
+func (o *OApiApp) GenerateOpenAPISpecYAML() (string, error) {
+	spec := o.GenerateOpenAPISpec()
+	yamlData, err := yaml.Marshal(spec)
+	if err != nil {
+		return "", err
+	}
+	return string(yamlData), nil
 }
 
 // collectAllTypes recursively collects all types referenced by a given type

@@ -85,6 +85,7 @@ func main() {
 		EnableOpenAPIDocs: true,
 		OpenAPIDocsPath:   "/documentation", // Custom docs path
 		OpenAPIJSONPath:   "/api-spec.json", // Custom spec path
+		OpenAPIYamlPath:   "/api-spec.yaml", // Custom YAML spec path
 	}
 	appOApi := fiberoapi.New(app, customConfig)
 	v1 := fiberoapi.Group(appOApi, "/api/v1")

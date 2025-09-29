@@ -14,6 +14,7 @@ type DocConfig struct {
 	Version     string
 	DocsPath    string // Path where docs will be served, default: "/docs"
 	JSONPath    string // Path where OpenAPI JSON will be served, default: "/openapi.json"
+	YamlPath    string // Path where OpenAPI YAML will be served, default: "/openapi.yaml"
 }
 
 // DefaultDocConfig returns default documentation configuration
@@ -24,6 +25,7 @@ func DefaultDocConfig() DocConfig {
 		Version:     "1.0.0",
 		DocsPath:    "/docs",
 		JSONPath:    "/openapi.json",
+		YamlPath:    "/openapi.yaml",
 	}
 }
 
