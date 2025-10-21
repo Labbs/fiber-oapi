@@ -282,6 +282,7 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process path parameters
 		if pathTag := field.Tag.Get("path"); pathTag != "" {
+			// Path parameters are always required regardless of type
 			param := map[string]interface{}{
 				"name":        pathTag,
 				"in":          "path",
@@ -294,7 +295,7 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process query parameters
 		if queryTag := field.Tag.Get("query"); queryTag != "" {
-			required := isFieldRequired(field)
+			required := isQueryFieldRequired(field)
 			param := map[string]interface{}{
 				"name":        queryTag,
 				"in":          "query",
@@ -322,20 +323,62 @@ func getFieldDescription(field reflect.StructField, defaultDesc string) string {
 	return fmt.Sprintf("%s: %s", defaultDesc, field.Name)
 }
 
-// isFieldRequired checks if a field is required based on validation tags
+// isFieldRequired checks if a field is required based on validation tags and type
 func isFieldRequired(field reflect.StructField) bool {
 	validateTag := field.Tag.Get("validate")
+	
+	// If it's a pointer type, it's optional by default (unless explicitly required)
+	if field.Type.Kind() == reflect.Ptr {
+		// For pointer types, only required if explicitly marked as required
+		return strings.Contains(validateTag, "required")
+	}
+	
+	// For non-pointer types, check validation tags
 	if validateTag == "" {
+		// No validation tag: assume required for path params, optional for query params
+		// This will be handled by the caller based on parameter type
 		return false
 	}
+	
+	// If has omitempty, it's optional
+	if strings.Contains(validateTag, "omitempty") {
+		return false
+	}
+	
+	// Check for explicit required validation
+	return strings.Contains(validateTag, "required")
+}
 
-	// Check for required validation
+// isQueryFieldRequired checks if a query parameter field is required
+// Query parameters have different logic than path parameters:
+// - Pointer types (*string, *int, etc.) are optional by default
+// - Non-pointer types are optional by default unless explicitly marked as required
+// - Fields with "omitempty" are optional
+// - Fields with "required" are required
+func isQueryFieldRequired(field reflect.StructField) bool {
+	validateTag := field.Tag.Get("validate")
+	
+	// If it's a pointer type, it's optional by default (unless explicitly required)
+	if field.Type.Kind() == reflect.Ptr {
+		return strings.Contains(validateTag, "required")
+	}
+	
+	// For non-pointer types in query parameters:
+	// - If has omitempty, it's optional
+	if strings.Contains(validateTag, "omitempty") {
+		return false
+	}
+	
+	// Check for explicit required validation
 	return strings.Contains(validateTag, "required")
 }
 
 // getSchemaForType returns OpenAPI schema for a Go type
 func getSchemaForType(t reflect.Type) map[string]interface{} {
 	schema := make(map[string]interface{})
+	
+	// Check if original type was a pointer (indicating nullable)
+	isPointer := t.Kind() == reflect.Ptr
 
 	// Handle pointer types
 	if t.Kind() == reflect.Ptr {
@@ -370,6 +413,11 @@ func getSchemaForType(t reflect.Type) map[string]interface{} {
 		schema["type"] = "boolean"
 	default:
 		schema["type"] = "string"
+	}
+	
+	// If the original type was a pointer, indicate it's nullable
+	if isPointer {
+		schema["nullable"] = true
 	}
 
 	return schema
