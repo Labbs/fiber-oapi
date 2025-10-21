@@ -282,7 +282,8 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process path parameters
 		if pathTag := field.Tag.Get("path"); pathTag != "" {
-			// Path parameters are always required regardless of type
+			// Path parameters are always required regardless of type or validation tags
+			// This follows OpenAPI 3.0 specification where path parameters must be required
 			param := map[string]interface{}{
 				"name":        pathTag,
 				"in":          "path",
@@ -295,6 +296,7 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process query parameters
 		if queryTag := field.Tag.Get("query"); queryTag != "" {
+			// Query parameters use specialized logic based on type and validation tags
 			required := isQueryFieldRequired(field)
 			param := map[string]interface{}{
 				"name":        queryTag,
@@ -323,34 +325,9 @@ func getFieldDescription(field reflect.StructField, defaultDesc string) string {
 	return fmt.Sprintf("%s: %s", defaultDesc, field.Name)
 }
 
-// isFieldRequired checks if a field is required based on validation tags and type
-func isFieldRequired(field reflect.StructField) bool {
-	validateTag := field.Tag.Get("validate")
-
-	// If it's a pointer type, it's optional by default (unless explicitly required)
-	if field.Type.Kind() == reflect.Ptr {
-		// For pointer types, only required if explicitly marked as required
-		return strings.Contains(validateTag, "required")
-	}
-
-	// For non-pointer types, check validation tags
-	if validateTag == "" {
-		// No validation tag: assume required for path params, optional for query params
-		// This will be handled by the caller based on parameter type
-		return false
-	}
-
-	// If has omitempty, it's optional
-	if strings.Contains(validateTag, "omitempty") {
-		return false
-	}
-
-	// Check for explicit required validation
-	return strings.Contains(validateTag, "required")
-}
-
 // isQueryFieldRequired checks if a query parameter field is required
 // Query parameters have different logic than path parameters:
+// - Path parameters are always required (handled separately)
 // - Pointer types (*string, *int, etc.) are optional by default
 // - Non-pointer types are optional by default unless explicitly marked as required
 // - Fields with "omitempty" are optional
