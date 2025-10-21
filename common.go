@@ -211,6 +211,12 @@ func validatePathParams[T any](path string) error {
 	// Check that each field with "path" tag exists in the path
 	for i := 0; i < inputType.NumField(); i++ {
 		field := inputType.Field(i)
+
+		// Skip unexported fields
+		if !field.IsExported() {
+			continue
+		}
+
 		if pathTag := field.Tag.Get("path"); pathTag != "" {
 			if !contains(pathParams, pathTag) {
 				return fmt.Errorf("field %s has path tag '%s' but parameter is not in path %s", field.Name, pathTag, path)
@@ -246,4 +252,152 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// extractParametersFromStruct extracts OpenAPI parameters from struct tags
+func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{} {
+	var parameters []map[string]interface{}
+
+	if inputType == nil {
+		return parameters
+	}
+
+	// Handle pointer types
+	if inputType.Kind() == reflect.Ptr {
+		inputType = inputType.Elem()
+	}
+
+	// Only process struct types
+	if inputType.Kind() != reflect.Struct {
+		return parameters
+	}
+
+	for i := 0; i < inputType.NumField(); i++ {
+		field := inputType.Field(i)
+
+		// Skip unexported fields
+		if !field.IsExported() {
+			continue
+		}
+
+		// Process path parameters
+		if pathTag := field.Tag.Get("path"); pathTag != "" {
+			param := map[string]interface{}{
+				"name":        pathTag,
+				"in":          "path",
+				"required":    true,
+				"description": getFieldDescription(field, "Path parameter"),
+				"schema":      getSchemaForType(field.Type),
+			}
+			parameters = append(parameters, param)
+		}
+
+		// Process query parameters
+		if queryTag := field.Tag.Get("query"); queryTag != "" {
+			required := isFieldRequired(field)
+			param := map[string]interface{}{
+				"name":        queryTag,
+				"in":          "query",
+				"required":    required,
+				"description": getFieldDescription(field, "Query parameter"),
+				"schema":      getSchemaForType(field.Type),
+			}
+			parameters = append(parameters, param)
+		}
+	}
+
+	return parameters
+}
+
+// getFieldDescription extracts description from struct field
+func getFieldDescription(field reflect.StructField, defaultDesc string) string {
+	// Try to get description from json tag comment or other sources
+	if desc := field.Tag.Get("description"); desc != "" {
+		return desc
+	}
+	if desc := field.Tag.Get("doc"); desc != "" {
+		return desc
+	}
+	// Use field name as fallback
+	return fmt.Sprintf("%s: %s", defaultDesc, field.Name)
+}
+
+// isFieldRequired checks if a field is required based on validation tags
+func isFieldRequired(field reflect.StructField) bool {
+	validateTag := field.Tag.Get("validate")
+	if validateTag == "" {
+		return false
+	}
+
+	// Check for required validation
+	return strings.Contains(validateTag, "required")
+}
+
+// getSchemaForType returns OpenAPI schema for a Go type
+func getSchemaForType(t reflect.Type) map[string]interface{} {
+	schema := make(map[string]interface{})
+
+	// Handle pointer types
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	switch t.Kind() {
+	case reflect.String:
+		schema["type"] = "string"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		schema["type"] = "integer"
+		if t.Kind() == reflect.Int64 {
+			schema["format"] = "int64"
+		} else {
+			schema["format"] = "int32"
+		}
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		schema["type"] = "integer"
+		schema["minimum"] = 0
+		if t.Kind() == reflect.Uint64 {
+			schema["format"] = "int64"
+		} else {
+			schema["format"] = "int32"
+		}
+	case reflect.Float32:
+		schema["type"] = "number"
+		schema["format"] = "float"
+	case reflect.Float64:
+		schema["type"] = "number"
+		schema["format"] = "double"
+	case reflect.Bool:
+		schema["type"] = "boolean"
+	default:
+		schema["type"] = "string"
+	}
+
+	return schema
+}
+
+// mergeParameters merges auto-generated parameters with manually defined ones
+// Manual parameters take precedence over auto-generated ones with the same name
+func mergeParameters(autoParams []map[string]interface{}, manualParams []map[string]interface{}) []map[string]interface{} {
+	// Create a map to track manual parameter names
+	manualParamNames := make(map[string]bool)
+	for _, param := range manualParams {
+		if name, ok := param["name"].(string); ok {
+			manualParamNames[name] = true
+		}
+	}
+
+	// Start with manual parameters (they have precedence)
+	result := make([]map[string]interface{}, len(manualParams))
+	copy(result, manualParams)
+
+	// Add auto-generated parameters that don't conflict with manual ones
+	for _, autoParam := range autoParams {
+		if name, ok := autoParam["name"].(string); ok {
+			if !manualParamNames[name] {
+				result = append(result, autoParam)
+			}
+		}
+	}
+
+	return result
 }

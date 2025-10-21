@@ -201,8 +201,21 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		if len(op.Options.Tags) > 0 {
 			enhancedOptions["tags"] = op.Options.Tags
 		}
+
+		// Auto-generate parameters from struct tags and merge with manual parameters
+		autoParameters := []map[string]interface{}{}
+		if op.InputType != nil {
+			autoParameters = extractParametersFromStruct(op.InputType)
+		}
+
+		// Merge auto-generated parameters with manually defined ones
+		allParameters := autoParameters
 		if len(op.Options.Parameters) > 0 {
-			enhancedOptions["parameters"] = op.Options.Parameters
+			allParameters = mergeParameters(autoParameters, op.Options.Parameters)
+		}
+
+		if len(allParameters) > 0 {
+			enhancedOptions["parameters"] = allParameters
 		}
 
 		// Add security information
