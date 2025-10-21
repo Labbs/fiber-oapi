@@ -15,11 +15,11 @@ type SearchInput struct {
 	Age      int     `query:"age" validate:"omitempty,min=0,max=120"`
 	Active   bool    `query:"active"`
 	MinPrice float64 `query:"minPrice" validate:"omitempty,min=0"`
-	
+
 	// Pointer types - automatically optional and nullable
-	Category    *string  `query:"category"`
-	MaxResults  *int     `query:"maxResults"`
-	IncludeInactive *bool `query:"includeInactive"`
+	Category        *string `query:"category"`
+	MaxResults      *int    `query:"maxResults"`
+	IncludeInactive *bool   `query:"includeInactive"`
 }
 
 type SearchOutput struct {
