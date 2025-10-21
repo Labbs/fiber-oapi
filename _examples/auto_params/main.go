@@ -15,6 +15,11 @@ type SearchInput struct {
 	Age      int     `query:"age" validate:"omitempty,min=0,max=120"`
 	Active   bool    `query:"active"`
 	MinPrice float64 `query:"minPrice" validate:"omitempty,min=0"`
+	
+	// Pointer types - automatically optional and nullable
+	Category    *string  `query:"category"`
+	MaxResults  *int     `query:"maxResults"`
+	IncludeInactive *bool `query:"includeInactive"`
 }
 
 type SearchOutput struct {
@@ -23,12 +28,13 @@ type SearchOutput struct {
 }
 
 type User struct {
-	ID     int     `json:"id"`
-	Name   string  `json:"name"`
-	Email  string  `json:"email"`
-	Age    int     `json:"age"`
-	Active bool    `json:"active"`
-	Price  float64 `json:"price"`
+	ID       int     `json:"id"`
+	Name     string  `json:"name"`
+	Email    string  `json:"email"`
+	Age      int     `json:"age"`
+	Active   bool    `json:"active"`
+	Price    float64 `json:"price"`
+	Category *string `json:"category,omitempty"`
 }
 
 type ErrorResponse struct {
@@ -44,12 +50,13 @@ func main() {
 	fiberoapi.Get(oapi, "/users/:name", func(c *fiber.Ctx, input SearchInput) (SearchOutput, ErrorResponse) {
 		// Simulate search results
 		user := User{
-			ID:     1,
-			Name:   input.Name,
-			Email:  input.Email,
-			Age:    input.Age,
-			Active: input.Active,
-			Price:  input.MinPrice,
+			ID:       1,
+			Name:     input.Name,
+			Email:    input.Email,
+			Age:      input.Age,
+			Active:   input.Active,
+			Price:    input.MinPrice,
+			Category: input.Category, // Pointer field - can be nil
 		}
 
 		return SearchOutput{
@@ -86,7 +93,8 @@ func main() {
 
 	fmt.Println("\n📖 Documentation disponible sur http://localhost:3000/docs")
 	fmt.Println("📊 Spec OpenAPI JSON sur http://localhost:3000/openapi.json")
-	fmt.Println("🧪 Test de l'endpoint : http://localhost:3000/users/john?email=john@example.com&age=25&active=true&minPrice=10.5")
+	fmt.Println("🧪 Test de l'endpoint : http://localhost:3000/users/john?email=john@example.com&age=25&active=true&minPrice=10.5&category=electronics&maxResults=10")
+	fmt.Println("🔧 Paramètres optionnels (pointeurs) : category, maxResults, includeInactive")
 
 	log.Fatal(app.Listen(":3000"))
 }
