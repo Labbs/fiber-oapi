@@ -236,3 +236,61 @@ func TestNoParametersWhenNoStruct(t *testing.T) {
 	_, hasParams := getOp["parameters"]
 	assert.False(t, hasParams, "Should not have parameters when no input struct")
 }
+
+func TestAutoParamsPointerTypesInline(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	type PointerTestInput struct {
+		ID           string  `path:"id" validate:"required"`
+		OptionalName *string `query:"optionalName"`
+		RequiredName string  `query:"requiredName" validate:"required"`
+		OmitEmpty    string  `query:"omitEmpty" validate:"omitempty"`
+	}
+
+	type PointerTestOutput struct {
+		Message string `json:"message"`
+	}
+
+	type PointerTestError struct {
+		Code int `json:"code"`
+	}
+
+	Get(oapi, "/pointer/:id", func(c *fiber.Ctx, input PointerTestInput) (PointerTestOutput, PointerTestError) {
+		return PointerTestOutput{Message: "ok"}, PointerTestError{}
+	}, OpenAPIOptions{
+		OperationID: "testPointerTypes",
+		Summary:     "Test pointer types in parameters",
+	})
+
+	spec := oapi.GenerateOpenAPISpec()
+	paths := spec["paths"].(map[string]interface{})
+	pointerPath := paths["/pointer/{id}"].(map[string]interface{})
+	getOp := pointerPath["get"].(map[string]interface{})
+	parameters := getOp["parameters"].([]map[string]interface{})
+
+	// Should have 4 parameters
+	assert.Len(t, parameters, 4, "Should have 4 parameters")
+
+	paramMap := make(map[string]map[string]interface{})
+	for _, param := range parameters {
+		if name, ok := param["name"].(string); ok {
+			paramMap[name] = param
+		}
+	}
+
+	// Check pointer type is optional and nullable
+	optionalNameParam := paramMap["optionalName"]
+	assert.Equal(t, false, optionalNameParam["required"], "Pointer types should be optional by default")
+	if schema, ok := optionalNameParam["schema"].(map[string]interface{}); ok {
+		assert.Equal(t, true, schema["nullable"], "Pointer types should be nullable")
+	}
+
+	// Check required field
+	requiredNameParam := paramMap["requiredName"]
+	assert.Equal(t, true, requiredNameParam["required"], "Fields with validate:required should be required")
+
+	// Check omitempty field
+	omitEmptyParam := paramMap["omitEmpty"]
+	assert.Equal(t, false, omitEmptyParam["required"], "Fields with omitempty should be optional")
+}
