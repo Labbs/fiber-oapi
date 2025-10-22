@@ -241,10 +241,7 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// Add request body schema for POST/PUT methods
 		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
 			if op.InputType != nil {
-				inputType := op.InputType
-				if inputType.Kind() == reflect.Ptr {
-					inputType = inputType.Elem()
-				}
+				inputType := dereferenceType(op.InputType)
 
 				var schemaRef map[string]interface{}
 
@@ -274,10 +271,7 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 		// Success response (200)
 		if op.OutputType != nil {
-			outputType := op.OutputType
-			if outputType.Kind() == reflect.Ptr {
-				outputType = outputType.Elem()
-			}
+			outputType := dereferenceType(op.OutputType)
 
 			var schemaRef map[string]interface{}
 
@@ -341,9 +335,7 @@ func collectAllTypes(t reflect.Type, collected map[string]reflect.Type) {
 	}
 
 	// Handle pointers
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	typeName := getTypeName(t)
 	if typeName == "" {
@@ -418,9 +410,7 @@ func shouldGenerateSchemaForType(t reflect.Type) bool {
 	}
 
 	// Handle pointers
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	switch t.Kind() {
 	case reflect.Struct:
@@ -428,19 +418,13 @@ func shouldGenerateSchemaForType(t reflect.Type) bool {
 		return t.NumField() > 0
 	case reflect.Map:
 		// Generate schema for maps with complex value types
-		valueType := t.Elem()
-		if valueType.Kind() == reflect.Ptr {
-			valueType = valueType.Elem()
-		}
+		valueType := dereferenceType(t.Elem())
 		return valueType.Kind() == reflect.Struct ||
 			valueType.Kind() == reflect.Map ||
 			valueType.Kind() == reflect.Slice
 	case reflect.Slice:
 		// Generate schema for slices of complex types
-		elemType := t.Elem()
-		if elemType.Kind() == reflect.Ptr {
-			elemType = elemType.Elem()
-		}
+		elemType := dereferenceType(t.Elem())
 		return elemType.Kind() == reflect.Struct ||
 			elemType.Kind() == reflect.Map
 	case reflect.Interface:
@@ -474,9 +458,7 @@ func getTypeName(t reflect.Type) string {
 	}
 
 	// Handle pointers
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	// Handle different kinds of types
 	switch t.Kind() {
@@ -517,9 +499,7 @@ func getSimpleTypeName(t reflect.Type) string {
 	}
 
 	// Handle pointers
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	switch t.Kind() {
 	case reflect.String:
@@ -557,9 +537,7 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 	}
 
 	// Handle pointers
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	schema := make(map[string]interface{})
 
@@ -681,9 +659,7 @@ func generateFieldSchema(t reflect.Type) map[string]interface{} {
 	schema := make(map[string]interface{})
 
 	// Handle pointers
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	switch t.Kind() {
 	case reflect.String:
@@ -806,9 +782,7 @@ func isEmptyStruct(t reflect.Type) bool {
 		return true
 	}
 
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	return t.Kind() == reflect.Struct && t.NumField() == 0
 }

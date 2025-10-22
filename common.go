@@ -196,7 +196,7 @@ func validatePathParams[T any](path string) error {
 	inputType := reflect.TypeOf(zero)
 
 	// If the type is a pointer, get the element type
-	if inputType != nil && inputType.Kind() == reflect.Ptr {
+	if inputType != nil && isPointerType(inputType) {
 		inputType = inputType.Elem()
 	}
 
@@ -263,9 +263,7 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 	}
 
 	// Handle pointer types
-	if inputType.Kind() == reflect.Ptr {
-		inputType = inputType.Elem()
-	}
+	inputType = dereferenceType(inputType)
 
 	// Only process struct types
 	if inputType.Kind() != reflect.Struct {
@@ -282,6 +280,9 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process path parameters
 		if pathTag := field.Tag.Get("path"); pathTag != "" {
+			// Path parameters are always required regardless of type or validation tags.
+			// This follows OpenAPI 3.0 specification where path parameters must be required,
+			// and is enforced here by explicitly setting "required": true at line 289.
 			param := map[string]interface{}{
 				"name":        pathTag,
 				"in":          "path",
@@ -294,7 +295,8 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process query parameters
 		if queryTag := field.Tag.Get("query"); queryTag != "" {
-			required := isFieldRequired(field)
+			// Query parameters use specialized logic based on type and validation tags
+			required := isQueryFieldRequired(field)
 			param := map[string]interface{}{
 				"name":        queryTag,
 				"in":          "query",
@@ -322,14 +324,46 @@ func getFieldDescription(field reflect.StructField, defaultDesc string) string {
 	return fmt.Sprintf("%s: %s", defaultDesc, field.Name)
 }
 
-// isFieldRequired checks if a field is required based on validation tags
-func isFieldRequired(field reflect.StructField) bool {
+// isPointerType checks if a reflect.Type is a pointer type
+func isPointerType(t reflect.Type) bool {
+	return t.Kind() == reflect.Ptr
+}
+
+// isPointerField checks if a reflect.StructField is a pointer type
+func isPointerField(field reflect.StructField) bool {
+	return isPointerType(field.Type)
+}
+
+// dereferenceType removes pointer indirection from a type
+func dereferenceType(t reflect.Type) reflect.Type {
+	if isPointerType(t) {
+		return t.Elem()
+	}
+	return t
+}
+
+// isQueryFieldRequired checks if a query parameter field is required
+// Query parameters have different logic than path parameters:
+// - Path parameters are always required (handled separately)
+// - Pointer types (*string, *int, etc.) are optional by default
+// - Non-pointer types are optional by default unless explicitly marked as required
+// - Fields with "omitempty" are optional
+// - Fields with "required" are required
+func isQueryFieldRequired(field reflect.StructField) bool {
 	validateTag := field.Tag.Get("validate")
-	if validateTag == "" {
+
+	// If it's a pointer type, it's optional by default (unless explicitly required)
+	if isPointerField(field) {
+		return strings.Contains(validateTag, "required")
+	}
+
+	// For non-pointer types in query parameters:
+	// - If has omitempty, it's optional
+	if strings.Contains(validateTag, "omitempty") {
 		return false
 	}
 
-	// Check for required validation
+	// Check for explicit required validation
 	return strings.Contains(validateTag, "required")
 }
 
@@ -337,10 +371,9 @@ func isFieldRequired(field reflect.StructField) bool {
 func getSchemaForType(t reflect.Type) map[string]interface{} {
 	schema := make(map[string]interface{})
 
-	// Handle pointer types
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	// Handle pointer types - preserve original to detect nullability, then dereference for type checking
+	originalType := t
+	t = dereferenceType(t)
 
 	switch t.Kind() {
 	case reflect.String:
@@ -370,6 +403,11 @@ func getSchemaForType(t reflect.Type) map[string]interface{} {
 		schema["type"] = "boolean"
 	default:
 		schema["type"] = "string"
+	}
+
+	// If the original type was a pointer, indicate it's nullable
+	if isPointerType(originalType) {
+		schema["nullable"] = true
 	}
 
 	return schema
