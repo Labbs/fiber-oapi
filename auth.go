@@ -176,7 +176,7 @@ func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{
 	inputValue := reflect.ValueOf(input)
 	inputType := reflect.TypeOf(input)
 
-	if inputType.Kind() == reflect.Ptr {
+	if isPointerType(inputType) {
 		inputValue = inputValue.Elem()
 		inputType = inputType.Elem()
 	}
