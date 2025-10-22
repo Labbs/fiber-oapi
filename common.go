@@ -282,7 +282,7 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 		if pathTag := field.Tag.Get("path"); pathTag != "" {
 			// Path parameters are always required regardless of type or validation tags.
 			// This follows OpenAPI 3.0 specification where path parameters must be required,
-			// and is enforced here by explicitly setting "required": true in the parameter map below.
+			// and is enforced here by explicitly setting "required": true at line 289.
 			param := map[string]interface{}{
 				"name":        pathTag,
 				"in":          "path",
