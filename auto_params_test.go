@@ -281,7 +281,7 @@ func TestAutoParamsPointerTypesInline(t *testing.T) {
 
 	// Check pointer type is optional and nullable
 	optionalNameParam := paramMap["optionalName"]
-	assert.Equal(t, false, optionalNameParam["required"], "Pointer types should be optional by default")
+	assert.False(t, optionalNameParam["required"], "Pointer types should be optional by default")
 	if schema, ok := optionalNameParam["schema"].(map[string]interface{}); ok {
 		assert.Equal(t, true, schema["nullable"], "Pointer types should be nullable")
 	}
