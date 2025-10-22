@@ -281,16 +281,16 @@ func TestAutoParamsPointerTypesInline(t *testing.T) {
 
 	// Check pointer type is optional and nullable
 	optionalNameParam := paramMap["optionalName"]
-	assert.False(t, optionalNameParam["required"], "Pointer types should be optional by default")
+	assert.False(t, optionalNameParam["required"].(bool), "Pointer types should be optional by default")
 	if schema, ok := optionalNameParam["schema"].(map[string]interface{}); ok {
-		assert.True(t, schema["nullable"], "Pointer types should be nullable")
+		assert.True(t, schema["nullable"].(bool), "Pointer types should be nullable")
 	}
 
 	// Check required field
 	requiredNameParam := paramMap["requiredName"]
-	assert.True(t, requiredNameParam["required"], "Fields with validate:required should be required")
+	assert.True(t, requiredNameParam["required"].(bool), "Fields with validate:required should be required")
 
 	// Check omitempty field
 	omitEmptyParam := paramMap["omitEmpty"]
-	assert.False(t, omitEmptyParam["required"], "Fields with omitempty should be optional")
+	assert.False(t, omitEmptyParam["required"].(bool), "Fields with omitempty should be optional")
 }
