@@ -371,10 +371,8 @@ func isQueryFieldRequired(field reflect.StructField) bool {
 func getSchemaForType(t reflect.Type) map[string]interface{} {
 	schema := make(map[string]interface{})
 
-	// Check if original type was a pointer (indicating nullable)
-	isPointer := isPointerType(t)
-
-	// Handle pointer types
+	// Handle pointer types - dereference for type checking
+	originalType := t
 	t = dereferenceType(t)
 
 	switch t.Kind() {
@@ -408,7 +406,7 @@ func getSchemaForType(t reflect.Type) map[string]interface{} {
 	}
 
 	// If the original type was a pointer, indicate it's nullable
-	if isPointer {
+	if isPointerType(originalType) {
 		schema["nullable"] = true
 	}
 
