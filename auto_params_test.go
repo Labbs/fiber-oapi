@@ -292,5 +292,5 @@ func TestAutoParamsPointerTypesInline(t *testing.T) {
 
 	// Check omitempty field
 	omitEmptyParam := paramMap["omitEmpty"]
-	assert.Equal(t, false, omitEmptyParam["required"], "Fields with omitempty should be optional")
+	assert.False(t, omitEmptyParam["required"], "Fields with omitempty should be optional")
 }
