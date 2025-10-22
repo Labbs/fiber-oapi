@@ -371,7 +371,7 @@ func isQueryFieldRequired(field reflect.StructField) bool {
 func getSchemaForType(t reflect.Type) map[string]interface{} {
 	schema := make(map[string]interface{})
 
-	// Handle pointer types - dereference for type checking
+	// Handle pointer types - preserve original to detect nullability, then dereference for type checking
 	originalType := t
 	t = dereferenceType(t)
 
