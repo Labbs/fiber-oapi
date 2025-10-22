@@ -196,7 +196,7 @@ func validatePathParams[T any](path string) error {
 	inputType := reflect.TypeOf(zero)
 
 	// If the type is a pointer, get the element type
-	if inputType != nil && inputType.Kind() == reflect.Ptr {
+	if inputType != nil && isPointerType(inputType) {
 		inputType = inputType.Elem()
 	}
 
@@ -263,9 +263,7 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 	}
 
 	// Handle pointer types
-	if inputType.Kind() == reflect.Ptr {
-		inputType = inputType.Elem()
-	}
+	inputType = dereferenceType(inputType)
 
 	// Only process struct types
 	if inputType.Kind() != reflect.Struct {
@@ -325,6 +323,24 @@ func getFieldDescription(field reflect.StructField, defaultDesc string) string {
 	return fmt.Sprintf("%s: %s", defaultDesc, field.Name)
 }
 
+// isPointerType checks if a reflect.Type is a pointer type
+func isPointerType(t reflect.Type) bool {
+	return t.Kind() == reflect.Ptr
+}
+
+// isPointerField checks if a reflect.StructField is a pointer type
+func isPointerField(field reflect.StructField) bool {
+	return isPointerType(field.Type)
+}
+
+// dereferenceType removes pointer indirection from a type
+func dereferenceType(t reflect.Type) reflect.Type {
+	if isPointerType(t) {
+		return t.Elem()
+	}
+	return t
+}
+
 // isQueryFieldRequired checks if a query parameter field is required
 // Query parameters have different logic than path parameters:
 // - Path parameters are always required (handled separately)
@@ -336,7 +352,7 @@ func isQueryFieldRequired(field reflect.StructField) bool {
 	validateTag := field.Tag.Get("validate")
 
 	// If it's a pointer type, it's optional by default (unless explicitly required)
-	if field.Type.Kind() == reflect.Ptr {
+	if isPointerField(field) {
 		return strings.Contains(validateTag, "required")
 	}
 
@@ -355,12 +371,10 @@ func getSchemaForType(t reflect.Type) map[string]interface{} {
 	schema := make(map[string]interface{})
 
 	// Check if original type was a pointer (indicating nullable)
-	isPointer := t.Kind() == reflect.Ptr
+	isPointer := isPointerType(t)
 
 	// Handle pointer types
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
+	t = dereferenceType(t)
 
 	switch t.Kind() {
 	case reflect.String:
