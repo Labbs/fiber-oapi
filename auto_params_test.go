@@ -288,7 +288,7 @@ func TestAutoParamsPointerTypesInline(t *testing.T) {
 
 	// Check required field
 	requiredNameParam := paramMap["requiredName"]
-	assert.Equal(t, true, requiredNameParam["required"], "Fields with validate:required should be required")
+	assert.True(t, requiredNameParam["required"], "Fields with validate:required should be required")
 
 	// Check omitempty field
 	omitEmptyParam := paramMap["omitEmpty"]
