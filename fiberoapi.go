@@ -40,7 +40,8 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.SecuritySchemes != nil ||
 			provided.OpenAPIDocsPath != "" ||
 			provided.OpenAPIJSONPath != "" ||
-			provided.OpenAPIYamlPath != ""
+			provided.OpenAPIYamlPath != "" ||
+			provided.ValidationErrorHandler != nil
 
 		// Only override boolean defaults if the config appears to be explicitly set
 		if hasExplicitConfig {
@@ -48,6 +49,24 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			cfg.EnableOpenAPIDocs = provided.EnableOpenAPIDocs
 		}
 		// If no explicit config, keep the defaults (true, true, false)
+
+		// Special case: if ValidationErrorHandler is set and boolean fields seem to be using zero values,
+		// restore defaults since it makes no sense to have a validation error handler without validation
+		otherExplicitConfig := provided.EnableAuthorization ||
+			provided.AuthService != nil ||
+			provided.SecuritySchemes != nil ||
+			provided.OpenAPIDocsPath != "" ||
+			provided.OpenAPIJSONPath != "" ||
+			provided.OpenAPIYamlPath != ""
+
+		// Only restore defaults if ALL boolean fields are false (suggesting they weren't explicitly set)
+		allBooleansAreFalse := !provided.EnableValidation && !provided.EnableOpenAPIDocs && !provided.EnableAuthorization
+
+		if provided.ValidationErrorHandler != nil && !otherExplicitConfig && allBooleansAreFalse {
+			// ValidationErrorHandler is the only explicit config, so restore defaults for boolean fields
+			cfg.EnableValidation = true   // Keep validation enabled - the handler needs it
+			cfg.EnableOpenAPIDocs = true  // Keep docs enabled - default behavior
+		}
 
 		// For EnableAuthorization: only set to true if explicitly provided
 		if provided.EnableAuthorization {
@@ -72,6 +91,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		if provided.DefaultSecurity != nil {
 			cfg.DefaultSecurity = provided.DefaultSecurity
+		}
+		if provided.ValidationErrorHandler != nil {
+			cfg.ValidationErrorHandler = provided.ValidationErrorHandler
 		}
 	}
 
@@ -821,6 +843,11 @@ func Method[TInput any, TOutput any, TError any](
 	fiberHandler := func(c *fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
+			// Use custom validation error handler if configured
+			if app.config.ValidationErrorHandler != nil {
+				return app.config.ValidationErrorHandler(c, err)
+			}
+			// Default validation error response
 			return c.Status(400).JSON(ErrorResponse{
 				Code:    400,
 				Details: err.Error(),
