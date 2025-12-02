@@ -40,7 +40,8 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.SecuritySchemes != nil ||
 			provided.OpenAPIDocsPath != "" ||
 			provided.OpenAPIJSONPath != "" ||
-			provided.OpenAPIYamlPath != ""
+			provided.OpenAPIYamlPath != "" ||
+			provided.ValidationErrorHandler != nil
 
 		// Only override boolean defaults if the config appears to be explicitly set
 		if hasExplicitConfig {
