@@ -50,22 +50,22 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		// If no explicit config, keep the defaults (true, true, false)
 
-		// Special case: if ValidationErrorHandler is set but EnableValidation wasn't explicitly set to false,
-		// keep validation enabled (default: true) since it makes no sense to have a validation error handler without validation
-		if provided.ValidationErrorHandler != nil && !provided.EnableValidation {
-			// Check if EnableValidation was explicitly set to false or just using the zero value
-			// If hasExplicitConfig is true only because of ValidationErrorHandler, keep validation enabled
-			otherExplicitConfig := provided.EnableAuthorization ||
-				provided.AuthService != nil ||
-				provided.SecuritySchemes != nil ||
-				provided.OpenAPIDocsPath != "" ||
-				provided.OpenAPIJSONPath != "" ||
-				provided.OpenAPIYamlPath != ""
+		// Special case: if ValidationErrorHandler is set and boolean fields seem to be using zero values,
+		// restore defaults since it makes no sense to have a validation error handler without validation
+		otherExplicitConfig := provided.EnableAuthorization ||
+			provided.AuthService != nil ||
+			provided.SecuritySchemes != nil ||
+			provided.OpenAPIDocsPath != "" ||
+			provided.OpenAPIJSONPath != "" ||
+			provided.OpenAPIYamlPath != ""
 
-			if !otherExplicitConfig {
-				// ValidationErrorHandler is the only explicit config, so keep validation enabled
-				cfg.EnableValidation = true
-			}
+		// Only restore defaults if ALL boolean fields are false (suggesting they weren't explicitly set)
+		allBooleansAreFalse := !provided.EnableValidation && !provided.EnableOpenAPIDocs && !provided.EnableAuthorization
+
+		if provided.ValidationErrorHandler != nil && !otherExplicitConfig && allBooleansAreFalse {
+			// ValidationErrorHandler is the only explicit config, so restore defaults for boolean fields
+			cfg.EnableValidation = true   // Keep validation enabled - the handler needs it
+			cfg.EnableOpenAPIDocs = true  // Keep docs enabled - default behavior
 		}
 
 		// For EnableAuthorization: only set to true if explicitly provided
