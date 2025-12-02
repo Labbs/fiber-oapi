@@ -182,3 +182,70 @@ func TestCustomValidationErrorHandlerWithDisabledDocs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusNotFound, resp.StatusCode)
 }
+
+func TestValidationErrorHandlerImpliesValidationEnabled(t *testing.T) {
+	app := fiber.New()
+
+	// Configure ONLY ValidationErrorHandler without explicitly setting EnableValidation
+	// This should keep validation enabled by default since it makes sense
+	oapi := New(app, Config{
+		ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+			return c.Status(fiber.StatusBadRequest).JSON(CustomValidationError{
+				Success: false,
+				Message: err.Error(),
+				Code:    "VALIDATION_HANDLER_ACTIVE",
+			})
+		},
+	})
+
+	type TestInput struct {
+		Name string `json:"name" validate:"required,min=3"`
+	}
+
+	type TestOutput struct {
+		Message string `json:"message"`
+	}
+
+	Post[TestInput, TestOutput, struct{}](
+		oapi,
+		"/test",
+		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+			return TestOutput{Message: "success"}, struct{}{}
+		},
+		OpenAPIOptions{},
+	)
+
+	// Test that validation is still active and uses custom handler
+	reqBody := map[string]interface{}{
+		"name": "ab", // Too short (min=3)
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+
+	// Verify validation is active and custom handler was used
+	body, _ := io.ReadAll(resp.Body)
+	var customErr CustomValidationError
+	err = json.Unmarshal(body, &customErr)
+	assert.NoError(t, err)
+	assert.Equal(t, "VALIDATION_HANDLER_ACTIVE", customErr.Code)
+	assert.Contains(t, customErr.Message, "min")
+
+	// Test with valid data to ensure endpoint works
+	reqBody = map[string]interface{}{
+		"name": "John Doe",
+	}
+	bodyBytes, _ = json.Marshal(reqBody)
+
+	req = httptest.NewRequest("POST", "/test", bytes.NewReader(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+}
