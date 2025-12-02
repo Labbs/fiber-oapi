@@ -3,25 +3,25 @@ package main
 import (
 	"log"
 
-	fiberoapi "github.com/labbs/fiber-oapi"
 	"github.com/gofiber/fiber/v2"
+	fiberoapi "github.com/labbs/fiber-oapi"
 )
 
-// CustomErrorResponse représente votre structure d'erreur personnalisée
+// CustomErrorResponse is the structure for custom validation error responses
 type CustomErrorResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 	Code    string `json:"code"`
 }
 
-// CreateUserInput représente l'entrée pour créer un utilisateur
+// CreateUserInput is the input structure for creating a user
 type CreateUserInput struct {
 	Name  string `json:"name" validate:"required,min=3"`
 	Email string `json:"email" validate:"required,email"`
 	Age   int    `json:"age" validate:"required,min=18,max=100"`
 }
 
-// CreateUserOutput représente la sortie
+// CreateUserOutput is the output structure for creating a user
 type CreateUserOutput struct {
 	ID      int    `json:"id"`
 	Name    string `json:"name"`
@@ -33,14 +33,14 @@ type CreateUserOutput struct {
 func main() {
 	app := fiber.New()
 
-	// Configurer fiber-oapi avec un gestionnaire d'erreur de validation personnalisé
+	// Configure fiber-oapi with a custom validation error handler
 	oapi := fiberoapi.New(app, fiberoapi.Config{
 		EnableValidation:  true,
 		EnableOpenAPIDocs: true,
-		// Définir votre handler personnalisé pour les erreurs de validation
+		// Define your custom handler for validation errors
 		ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
-			// Vous pouvez parser l'erreur de validation pour extraire plus de détails
-			// ou simplement retourner votre structure personnalisée
+			// You can parse the validation error to extract more details
+			// or simply return your custom structure
 			return c.Status(fiber.StatusBadRequest).JSON(CustomErrorResponse{
 				Success: false,
 				Message: err.Error(),
@@ -49,12 +49,12 @@ func main() {
 		},
 	})
 
-	// Définir votre endpoint
+	// Define your endpoint
 	fiberoapi.Post[CreateUserInput, CreateUserOutput, struct{}](
 		oapi,
 		"/users",
 		func(c *fiber.Ctx, input CreateUserInput) (CreateUserOutput, struct{}) {
-			// Logique de création d'utilisateur
+			// User creation logic goes here
 			return CreateUserOutput{
 				ID:      1,
 				Name:    input.Name,
