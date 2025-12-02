@@ -50,6 +50,24 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		// If no explicit config, keep the defaults (true, true, false)
 
+		// Special case: if ValidationErrorHandler is set but EnableValidation wasn't explicitly set to false,
+		// keep validation enabled (default: true) since it makes no sense to have a validation error handler without validation
+		if provided.ValidationErrorHandler != nil && !provided.EnableValidation {
+			// Check if EnableValidation was explicitly set to false or just using the zero value
+			// If hasExplicitConfig is true only because of ValidationErrorHandler, keep validation enabled
+			otherExplicitConfig := provided.EnableAuthorization ||
+				provided.AuthService != nil ||
+				provided.SecuritySchemes != nil ||
+				provided.OpenAPIDocsPath != "" ||
+				provided.OpenAPIJSONPath != "" ||
+				provided.OpenAPIYamlPath != ""
+
+			if !otherExplicitConfig {
+				// ValidationErrorHandler is the only explicit config, so keep validation enabled
+				cfg.EnableValidation = true
+			}
+		}
+
 		// For EnableAuthorization: only set to true if explicitly provided
 		if provided.EnableAuthorization {
 			cfg.EnableAuthorization = provided.EnableAuthorization
