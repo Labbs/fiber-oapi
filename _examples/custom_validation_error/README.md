@@ -20,11 +20,28 @@ However, you might want all errors in your API to follow the same structure, inc
 
 Use the `ValidationErrorHandler` field in the `Config` to provide a custom function that handles validation errors:
 
+**Note:** When you configure a `ValidationErrorHandler`, validation is automatically enabled (`EnableValidation: true` by default). You don't need to explicitly set `EnableValidation: true` unless you're also configuring other options.
+
 ```go
+// Minimal configuration - validation is automatically enabled
 oapi := fiberoapi.New(app, fiberoapi.Config{
-    EnableValidation: true,
     ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
         // Return your custom error structure
+        return c.Status(fiber.StatusBadRequest).JSON(CustomErrorResponse{
+            Success: false,
+            Message: err.Error(),
+            Code:    "VALIDATION_ERROR",
+        })
+    },
+})
+```
+
+```go
+// Or with explicit configuration
+oapi := fiberoapi.New(app, fiberoapi.Config{
+    EnableValidation: true,
+    EnableOpenAPIDocs: true,
+    ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
         return c.Status(fiber.StatusBadRequest).JSON(CustomErrorResponse{
             Success: false,
             Message: err.Error(),
