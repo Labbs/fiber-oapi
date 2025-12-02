@@ -248,4 +248,10 @@ func TestValidationErrorHandlerImpliesValidationEnabled(t *testing.T) {
 	resp, err = app.Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode)
+
+	// Verify that OpenAPI docs are enabled by default (not silently disabled)
+	req = httptest.NewRequest("GET", "/docs", nil)
+	resp, err = app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode, "OpenAPI docs should be enabled by default when only ValidationErrorHandler is configured")
 }
