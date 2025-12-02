@@ -53,17 +53,22 @@ type PathInfo struct {
 	Index  int // Position in the path for validation
 }
 
+// ValidationErrorHandler is a function type for handling validation errors
+// It receives the fiber context and the validation error, and returns a fiber error response
+type ValidationErrorHandler func(c *fiber.Ctx, err error) error
+
 // Config represents configuration for the OApi wrapper
 type Config struct {
-	EnableValidation    bool                      // Enable request validation (default: true)
-	EnableOpenAPIDocs   bool                      // Enable automatic docs setup (default: true)
-	EnableAuthorization bool                      // Enable authorization validation (default: false)
-	OpenAPIDocsPath     string                    // Path for documentation UI (default: "/docs")
-	OpenAPIJSONPath     string                    // Path for OpenAPI JSON spec (default: "/openapi.json")
-	OpenAPIYamlPath     string                    // Path for OpenAPI YAML spec (default: "/openapi.yaml")
-	AuthService         AuthorizationService      // Service for handling authentication and authorization
-	SecuritySchemes     map[string]SecurityScheme // OpenAPI security schemes
-	DefaultSecurity     []map[string][]string     // Default security requirements
+	EnableValidation       bool                      // Enable request validation (default: true)
+	EnableOpenAPIDocs      bool                      // Enable automatic docs setup (default: true)
+	EnableAuthorization    bool                      // Enable authorization validation (default: false)
+	OpenAPIDocsPath        string                    // Path for documentation UI (default: "/docs")
+	OpenAPIJSONPath        string                    // Path for OpenAPI JSON spec (default: "/openapi.json")
+	OpenAPIYamlPath        string                    // Path for OpenAPI YAML spec (default: "/openapi.yaml")
+	AuthService            AuthorizationService      // Service for handling authentication and authorization
+	SecuritySchemes        map[string]SecurityScheme // OpenAPI security schemes
+	DefaultSecurity        []map[string][]string     // Default security requirements
+	ValidationErrorHandler ValidationErrorHandler    // Custom handler for validation errors
 }
 
 // OpenAPIOptions represents options for OpenAPI operations

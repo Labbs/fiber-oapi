@@ -73,6 +73,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		if provided.DefaultSecurity != nil {
 			cfg.DefaultSecurity = provided.DefaultSecurity
 		}
+		if provided.ValidationErrorHandler != nil {
+			cfg.ValidationErrorHandler = provided.ValidationErrorHandler
+		}
 	}
 
 	oapi := &OApiApp{
@@ -821,6 +824,11 @@ func Method[TInput any, TOutput any, TError any](
 	fiberHandler := func(c *fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
+			// Use custom validation error handler if configured
+			if app.config.ValidationErrorHandler != nil {
+				return app.config.ValidationErrorHandler(c, err)
+			}
+			// Default validation error response
 			return c.Status(400).JSON(ErrorResponse{
 				Code:    400,
 				Details: err.Error(),
