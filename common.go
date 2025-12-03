@@ -67,11 +67,11 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 								fieldNameParts := strings.Split(fullFieldName, ".")
 								fieldName := fieldNameParts[len(fieldNameParts)-1]
 
-								// Extract expected type
-								expectedType := fieldParts[1]
+								// Extract expected type and trim whitespace
+								expectedType := strings.TrimSpace(fieldParts[1])
 
-								// Extract actual type from the first part
-								typePart := strings.TrimPrefix(parts[0], "json: cannot unmarshal ")
+								// Extract actual type from the first part and trim whitespace
+								typePart := strings.TrimSpace(strings.TrimPrefix(parts[0], "json: cannot unmarshal "))
 
 								return input, fmt.Errorf("invalid type for field '%s': expected %s but got %s",
 									fieldName, expectedType, typePart)
