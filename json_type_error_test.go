@@ -14,20 +14,20 @@ func TestJSONTypeMismatchErrors(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	type CreateWorkspaceRequest struct {
-		Description  string   `json:"description,omitempty" validate:"omitempty,max=255"`
-		IpsWhitelist []string `json:"ips_whitelist,omitempty" validate:"dive,cidrv4|ip4_addr"`
+	type CreateRequest struct {
+		Description string   `json:"description,omitempty" validate:"omitempty,max=255"`
+		Ips         []string `json:"ips,omitempty" validate:"dive,cidrv4|ip4_addr"`
 	}
 
-	type CreateWorkspaceResponse struct {
+	type CreateResponse struct {
 		Message string `json:"message"`
 	}
 
-	Post(oapi, "/workspaces", func(c *fiber.Ctx, input CreateWorkspaceRequest) (CreateWorkspaceResponse, TestError) {
-		return CreateWorkspaceResponse{Message: "Workspace created"}, TestError{}
+	Post(oapi, "/test", func(c *fiber.Ctx, input CreateRequest) (CreateResponse, TestError) {
+		return CreateResponse{Message: "created"}, TestError{}
 	}, OpenAPIOptions{
-		OperationID: "create-workspace",
-		Summary:     "Create a new workspace",
+		OperationID: "create",
+		Summary:     "Create a new entry",
 	})
 
 	tests := []struct {
@@ -54,8 +54,8 @@ func TestJSONTypeMismatchErrors(t *testing.T) {
 			errorContains:  "invalid type for field 'description'",
 		},
 		{
-			name:           "Invalid request - ips_whitelist contains number",
-			body:           `{"ips_whitelist": [123]}`,
+			name:           "Invalid request - ips contains number",
+			body:           `{"ips": [123]}`,
 			expectedStatus: 400,
 			errorContains:  "invalid type",
 		},
@@ -66,28 +66,28 @@ func TestJSONTypeMismatchErrors(t *testing.T) {
 		},
 		{
 			name:           "Valid request with valid IPs",
-			body:           `{"description": "Test", "ips_whitelist": ["192.168.1.0/24", "10.0.0.1"]}`,
+			body:           `{"description": "Test", "ips": ["192.168.1.0/24", "10.0.0.1"]}`,
 			expectedStatus: 200,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("POST", "/workspaces", strings.NewReader(tt.body))
+			req := httptest.NewRequest("POST", "/test", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
 			resp, err := app.Test(req)
 			if err != nil {
 				t.Fatalf("Expected no error, got %v", err)
 			}
 
+			body, _ := io.ReadAll(resp.Body)
+			bodyStr := string(body)
+
 			if resp.StatusCode != tt.expectedStatus {
-				body, _ := io.ReadAll(resp.Body)
-				t.Errorf("Expected status %d, got %d. Body: %s", tt.expectedStatus, resp.StatusCode, string(body))
+				t.Errorf("Expected status %d, got %d. Body: %s", tt.expectedStatus, resp.StatusCode, bodyStr)
 			}
 
 			if tt.errorContains != "" {
-				body, _ := io.ReadAll(resp.Body)
-				bodyStr := string(body)
 				if !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)
 				}
