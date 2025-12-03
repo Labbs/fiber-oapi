@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -50,8 +51,9 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 					// It's OK, the POST has no body - ignore the error
 				} else {
 					// Transform JSON unmarshal type errors into readable validation errors
-					// Check if error message contains unmarshal type error pattern
 					errMsg := err.Error()
+
+					// Check if error message contains unmarshal type error pattern
 					if strings.Contains(errMsg, "json: cannot unmarshal") && strings.Contains(errMsg, "into Go struct field") {
 						// Parse the error message to extract field name and type info
 						// Format: "json: cannot unmarshal <type> into Go struct field <StructName>.<Field> of type <GoType>"
@@ -75,8 +77,20 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 									fieldName, expectedType, typePart)
 							}
 						}
+					} else if strings.Contains(errMsg, "json: slice") || strings.Contains(errMsg, "json: map") {
+						// Handle "json: slice unexpected end of JSON input" and similar errors
+						// This happens when sending wrong type for slice/map fields
+						// Try to identify which field caused the error by parsing the request body
+						fieldName, expectedType, actualType := detectTypeMismatchFromBody(c.Body(), input)
+						if fieldName != "" {
+							return input, fmt.Errorf("invalid type for field '%s': expected %s but got %s",
+								fieldName, expectedType, actualType)
+						}
+						// Fallback to generic message if we can't identify the field
+						return input, fmt.Errorf("invalid JSON: expected array or object but got incompatible type")
 					}
 
+					// Return original error if no pattern matched
 					return input, err
 				}
 			}
@@ -439,6 +453,116 @@ func getSchemaForType(t reflect.Type) map[string]interface{} {
 	}
 
 	return schema
+}
+
+// detectTypeMismatchFromBody attempts to identify which field caused a JSON type mismatch
+// by parsing the request body and comparing against the expected struct type
+func detectTypeMismatchFromBody(body []byte, input interface{}) (fieldName, expectedType, actualType string) {
+	// Parse the JSON body into a map to see what was actually sent
+	var bodyMap map[string]interface{}
+	if err := json.Unmarshal(body, &bodyMap); err != nil {
+		return "", "", ""
+	}
+
+	// Get the struct type using reflection
+	inputValue := reflect.ValueOf(input)
+	if inputValue.Kind() == reflect.Ptr {
+		inputValue = inputValue.Elem()
+	}
+	inputType := inputValue.Type()
+
+	if inputType.Kind() != reflect.Struct {
+		return "", "", ""
+	}
+
+	// Iterate through struct fields to find the mismatch
+	for i := 0; i < inputType.NumField(); i++ {
+		field := inputType.Field(i)
+
+		// Get the JSON tag name (default to field name if no tag)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "" {
+			jsonTag = field.Name
+		} else {
+			// Remove omitempty and other options from the tag
+			jsonTag = strings.Split(jsonTag, ",")[0]
+		}
+
+		// Check if this field is in the body map
+		if actualValue, exists := bodyMap[jsonTag]; exists {
+			expectedFieldType := dereferenceType(field.Type)
+			actualValueType := getJSONValueType(actualValue)
+
+			// Check for type mismatch
+			mismatch := false
+			expectedTypeName := ""
+
+			switch expectedFieldType.Kind() {
+			case reflect.String:
+				expectedTypeName = "string"
+				if actualValueType != "string" {
+					mismatch = true
+				}
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				expectedTypeName = "integer"
+				if actualValueType != "number" {
+					mismatch = true
+				}
+			case reflect.Float32, reflect.Float64:
+				expectedTypeName = "number"
+				if actualValueType != "number" {
+					mismatch = true
+				}
+			case reflect.Bool:
+				expectedTypeName = "boolean"
+				if actualValueType != "boolean" {
+					mismatch = true
+				}
+			case reflect.Slice, reflect.Array:
+				expectedTypeName = fmt.Sprintf("[]%s", dereferenceType(expectedFieldType.Elem()).Kind())
+				if actualValueType != "array" {
+					mismatch = true
+				}
+			case reflect.Map:
+				expectedTypeName = "map"
+				if actualValueType != "object" {
+					mismatch = true
+				}
+			case reflect.Struct:
+				expectedTypeName = "object"
+				if actualValueType != "object" {
+					mismatch = true
+				}
+			}
+
+			if mismatch {
+				return field.Name, expectedTypeName, actualValueType
+			}
+		}
+	}
+
+	return "", "", ""
+}
+
+// getJSONValueType returns the JSON type name for a value parsed from JSON
+func getJSONValueType(value interface{}) string {
+	switch value.(type) {
+	case string:
+		return "string"
+	case float64, int, int64:
+		return "number"
+	case bool:
+		return "boolean"
+	case []interface{}:
+		return "array"
+	case map[string]interface{}:
+		return "object"
+	case nil:
+		return "null"
+	default:
+		return "unknown"
+	}
 }
 
 // mergeParameters merges auto-generated parameters with manually defined ones
