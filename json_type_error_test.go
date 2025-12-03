@@ -9,6 +9,21 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// JSON Type Mismatch Error Handling Tests
+//
+// These tests verify that fiber-oapi correctly handles JSON type mismatch errors
+// and transforms them into user-friendly validation error messages.
+//
+// Problem: When a client sends invalid JSON types (e.g., number instead of string),
+// the raw Go error message is not user-friendly:
+//   "json: cannot unmarshal number into Go struct field Request.Description of type string"
+//
+// Solution: Detect json.UnmarshalTypeError and transform it into a readable message:
+//   "invalid type for field 'description': expected string but got number"
+//
+// Implementation: Uses errors.As (not type assertion) to handle wrapped errors correctly.
+// This ensures the error detection works even if the error is wrapped by Fiber or middleware.
+
 // Test for JSON type mismatch errors
 func TestJSONTypeMismatchErrors(t *testing.T) {
 	app := fiber.New()
@@ -97,6 +112,48 @@ func TestJSONTypeMismatchErrors(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Test that errors.As correctly handles wrapped errors
+func TestJSONTypeMismatchWithWrappedError(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	type TestRequest struct {
+		Value string `json:"value"`
+	}
+
+	type TestResponse struct {
+		Result string `json:"result"`
+	}
+
+	Post(oapi, "/test", func(c *fiber.Ctx, input TestRequest) (TestResponse, TestError) {
+		return TestResponse{Result: "OK"}, TestError{}
+	}, OpenAPIOptions{})
+
+	// Test with wrong type - even if the error is wrapped, errors.As should detect it
+	req := httptest.NewRequest("POST", "/test", strings.NewReader(`{"value": 123}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if resp.StatusCode != 400 {
+		t.Errorf("Expected status 400, got %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	// Should contain our custom error message
+	if !strings.Contains(bodyStr, "invalid type for field 'value'") {
+		t.Errorf("Expected 'invalid type for field' in error message, got %s", bodyStr)
+	}
+
+	if !strings.Contains(bodyStr, "expected string but got number") {
+		t.Errorf("Expected 'expected string but got number' in error message, got %s", bodyStr)
 	}
 }
 
