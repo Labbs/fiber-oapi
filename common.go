@@ -1,8 +1,6 @@
 package fiberoapi
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -52,12 +50,33 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 					// It's OK, the POST has no body - ignore the error
 				} else {
 					// Transform JSON unmarshal type errors into readable validation errors
-					// Using errors.As for more robust error handling (handles wrapped errors)
-					var unmarshalErr *json.UnmarshalTypeError
-					if errors.As(err, &unmarshalErr) {
-						return input, fmt.Errorf("invalid type for field '%s': expected %s but got %s",
-							unmarshalErr.Field, unmarshalErr.Type.String(), unmarshalErr.Value)
+					// Check if error message contains unmarshal type error pattern
+					errMsg := err.Error()
+					if strings.Contains(errMsg, "json: cannot unmarshal") && strings.Contains(errMsg, "into Go struct field") {
+						// Parse the error message to extract field name and type info
+						// Format: "json: cannot unmarshal <type> into Go struct field <StructName>.<Field> of type <GoType>"
+						parts := strings.Split(errMsg, "into Go struct field ")
+						if len(parts) == 2 {
+							afterField := parts[1]
+							fieldParts := strings.Split(afterField, " of type ")
+							if len(fieldParts) == 2 {
+								// Extract field name (after the last dot)
+								fullFieldName := fieldParts[0]
+								fieldNameParts := strings.Split(fullFieldName, ".")
+								fieldName := fieldNameParts[len(fieldNameParts)-1]
+
+								// Extract expected type
+								expectedType := fieldParts[1]
+
+								// Extract actual type from the first part
+								typePart := strings.TrimPrefix(parts[0], "json: cannot unmarshal ")
+
+								return input, fmt.Errorf("invalid type for field '%s': expected %s but got %s",
+									fieldName, expectedType, typePart)
+							}
+						}
 					}
+
 					return input, err
 				}
 			}
