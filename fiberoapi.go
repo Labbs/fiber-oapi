@@ -862,11 +862,15 @@ func Method[TInput any, TOutput any, TError any](
 		}
 
 		if err := c.JSON(output); err != nil {
-			return c.Status(500).JSON(ErrorResponse{
+			if fallbackErr := c.Status(500).JSON(ErrorResponse{
 				Code:    500,
 				Details: "Failed to serialize response",
 				Type:    "serialization_error",
-			})
+			}); fallbackErr != nil {
+				// Both serializations failed, return original error to Fiber
+				return err
+			}
+			return nil
 		}
 		return nil
 	}
