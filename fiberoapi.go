@@ -861,7 +861,18 @@ func Method[TInput any, TOutput any, TError any](
 			return handleCustomError(c, customErr)
 		}
 
-		return c.JSON(output)
+		if err := c.JSON(output); err != nil {
+			if fallbackErr := c.Status(500).JSON(ErrorResponse{
+				Code:    500,
+				Details: "Failed to serialize response",
+				Type:    "serialization_error",
+			}); fallbackErr != nil {
+				// Both serializations failed, return original error to Fiber
+				return err
+			}
+			return nil
+		}
+		return nil
 	}
 
 	app.f.Add(m, fullPath, fiberHandler)

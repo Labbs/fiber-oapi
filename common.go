@@ -145,7 +145,14 @@ func handleCustomError(c *fiber.Ctx, customErr interface{}) error {
 	}
 
 	// Return the error as JSON
-	return c.Status(statusCode).JSON(customErr)
+	if err := c.Status(statusCode).JSON(customErr); err != nil {
+		if fallbackErr := c.Status(500).JSON(fiber.Map{"error": "Failed to serialize error response"}); fallbackErr != nil {
+			// Both serializations failed, return original error to Fiber
+			return err
+		}
+		return nil
+	}
+	return nil
 }
 
 // Utility to check if a value is zero
