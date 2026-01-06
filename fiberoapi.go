@@ -575,6 +575,11 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 				continue
 			}
 
+			// Skip fields that are path or query parameters - they are handled separately
+			if field.Tag.Get("path") != "" || field.Tag.Get("query") != "" {
+				continue
+			}
+
 			// Get JSON tag name
 			jsonTag := field.Tag.Get("json")
 			if jsonTag == "-" {
@@ -600,13 +605,6 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 				if strings.Contains(validateTag, "required") {
 					required = append(required, fieldName)
 				}
-			}
-
-			// Add description from path/query tags
-			if pathTag := field.Tag.Get("path"); pathTag != "" {
-				fieldSchema["description"] = "Path parameter: " + pathTag
-			} else if queryTag := field.Tag.Get("query"); queryTag != "" {
-				fieldSchema["description"] = "Query parameter: " + queryTag
 			}
 
 			properties[fieldName] = fieldSchema
