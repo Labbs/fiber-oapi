@@ -861,6 +861,78 @@ func TestValidateSecurityRequirement_ANDConflictingUserID(t *testing.T) {
 	}
 }
 
+// --- Unsupported API Key location test ---
+
+func TestValidateAPIKey_UnsupportedLocation(t *testing.T) {
+	app := fiber.New()
+	authService := NewMockAPIKeyAuthService()
+	config := Config{
+		SecuritySchemes: map[string]SecurityScheme{
+			"badKey": {Type: "apiKey", In: "body", Name: "api_key"}, // "body" is not a valid location
+		},
+		DefaultSecurity: []map[string][]string{
+			{"badKey": {}},
+		},
+	}
+	app.Use(MultiSchemeAuthMiddleware(authService, config))
+	app.Get("/test", func(c *fiber.Ctx) error {
+		return c.SendStatus(200)
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.StatusCode != 500 {
+		t.Errorf("Expected status 500 for unsupported API Key location, got %d", resp.StatusCode)
+	}
+}
+
+// --- Per-route security requirements test ---
+
+func TestPerRouteSecurity_OverridesGlobalDefault(t *testing.T) {
+	app := fiber.New()
+	apiKeyService := NewMockAPIKeyAuthService()
+
+	oapi := New(app, Config{
+		EnableValidation:    true,
+		EnableAuthorization: true,
+		AuthService:         apiKeyService,
+		SecuritySchemes: map[string]SecurityScheme{
+			"bearerAuth": {Type: "http", Scheme: "bearer"},
+			"apiKey":     {Type: "apiKey", In: "header", Name: "X-API-Key"},
+		},
+		// Global default requires Bearer
+		DefaultSecurity: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	})
+
+	// Route with per-route security requiring API Key instead of Bearer
+	routeSecurity := []map[string][]string{
+		{"apiKey": {}},
+	}
+	Get(oapi, "/api-key-route", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		authCtx, err := GetAuthContext(c)
+		if err != nil {
+			return nil, &ErrorResponse{Code: 500, Details: err.Error()}
+		}
+		return fiber.Map{"user_id": authCtx.UserID}, nil
+	}, WithSecurity(OpenAPIOptions{Summary: "API Key route"}, routeSecurity))
+
+	// Request with API Key (no Bearer) should succeed on the per-route security route
+	req := httptest.NewRequest("GET", "/api-key-route", nil)
+	req.Header.Set("X-API-Key", "my-api-key-123")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Errorf("Expected status 200 for per-route API Key auth, got %d", resp.StatusCode)
+	}
+}
+
 func parseJSONResponse(resp *http.Response, target interface{}) error {
 	defer resp.Body.Close()
 	return json.NewDecoder(resp.Body).Decode(target)
