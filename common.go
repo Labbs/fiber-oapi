@@ -118,7 +118,8 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 		if securityValue, ok := options.Security.(string); ok && securityValue == "disabled" {
 			// Skip authorization for this route
 		} else {
-			err = validateAuthorization(c, input, app.Config().AuthService)
+			cfg := app.Config()
+			err = validateAuthorization(c, input, cfg.AuthService, &cfg)
 			if err != nil {
 				return input, err
 			}
