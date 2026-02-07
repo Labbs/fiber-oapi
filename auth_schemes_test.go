@@ -487,6 +487,14 @@ func TestParseAWSSigV4Header(t *testing.T) {
 			t.Error("Expected error for missing Signature")
 		}
 	})
+
+	t.Run("Missing SignedHeaders", func(t *testing.T) {
+		header := "AWS4-HMAC-SHA256 Credential=AKID/20250101/us-east-1/s3/aws4_request, Signature=abc123"
+		_, err := parseAWSSigV4Header(header)
+		if err == nil {
+			t.Error("Expected error for missing SignedHeaders")
+		}
+	})
 }
 
 // --- Multi-scheme dispatch tests ---
