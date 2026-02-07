@@ -214,11 +214,11 @@ func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{
 
 				canAccess, err := authService.CanAccessResource(authCtx, resourceTag, resourceID, actionTag)
 				if err != nil {
-					return fmt.Errorf("authorization check failed: %w", err)
+					return &AuthError{StatusCode: 500, Message: fmt.Sprintf("authorization check failed: %v", err)}
 				}
 
 				if !canAccess {
-					return fmt.Errorf("insufficient permissions for %s %s on %s", actionTag, resourceTag, resourceID)
+					return &AuthError{StatusCode: 403, Message: fmt.Sprintf("insufficient permissions for %s %s on %s", actionTag, resourceTag, resourceID)}
 				}
 			}
 		}
