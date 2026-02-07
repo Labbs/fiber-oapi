@@ -137,21 +137,34 @@ func TestHeaderParameterWithPointerTypes(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
+	type PointerHeaderOutput struct {
+		TraceID    string `json:"traceId"`
+		RetryCount int    `json:"retryCount"`
+		HasTrace   bool   `json:"hasTrace"`
+		HasRetry   bool   `json:"hasRetry"`
+	}
+
 	type PointerHeaderInput struct {
 		TraceID    *string `header:"x-trace-id"`
 		RetryCount *int    `header:"x-retry-count"`
 	}
 
-	type SimpleOutput struct {
-		OK bool `json:"ok"`
-	}
-
-	Get(oapi, "/test", func(c *fiber.Ctx, input PointerHeaderInput) (SimpleOutput, struct{}) {
-		return SimpleOutput{OK: true}, struct{}{}
+	Get(oapi, "/test", func(c *fiber.Ctx, input PointerHeaderInput) (PointerHeaderOutput, struct{}) {
+		out := PointerHeaderOutput{}
+		if input.TraceID != nil {
+			out.TraceID = *input.TraceID
+			out.HasTrace = true
+		}
+		if input.RetryCount != nil {
+			out.RetryCount = *input.RetryCount
+			out.HasRetry = true
+		}
+		return out, struct{}{}
 	}, OpenAPIOptions{
 		OperationID: "testPointerHeaders",
 	})
 
+	// Test OpenAPI spec generation
 	spec := oapi.GenerateOpenAPISpec()
 
 	paths := spec["paths"].(map[string]interface{})
@@ -174,6 +187,39 @@ func TestHeaderParameterWithPointerTypes(t *testing.T) {
 	if schema, ok := traceParam["schema"].(map[string]interface{}); ok {
 		assert.Equal(t, true, schema["nullable"])
 	}
+
+	// Test runtime binding with pointer headers provided
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	req.Header.Set("x-trace-id", "trace-abc")
+	req.Header.Set("x-retry-count", "3")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	var output PointerHeaderOutput
+	require.NoError(t, json.Unmarshal(body, &output))
+
+	assert.Equal(t, "trace-abc", output.TraceID)
+	assert.Equal(t, 3, output.RetryCount)
+	assert.True(t, output.HasTrace)
+	assert.True(t, output.HasRetry)
+
+	// Test runtime binding without pointer headers (should remain nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
+	resp2, err := app.Test(req2)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp2.StatusCode)
+
+	body2, _ := io.ReadAll(resp2.Body)
+	var output2 PointerHeaderOutput
+	require.NoError(t, json.Unmarshal(body2, &output2))
+
+	assert.Equal(t, "", output2.TraceID)
+	assert.Equal(t, 0, output2.RetryCount)
+	assert.False(t, output2.HasTrace)
+	assert.False(t, output2.HasRetry)
 }
 
 func TestHeaderNotInRequestBody(t *testing.T) {
