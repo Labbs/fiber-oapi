@@ -267,19 +267,57 @@ func TestHeaderNotInRequestBody(t *testing.T) {
 	assert.True(t, hasName, "JSON body field should appear in request body schema")
 
 	// Verify that sending the header field in JSON body without the actual header
-	// does NOT satisfy the header requirement. Since body parsing runs after header
-	// parsing, c.BodyParser can populate exported fields by Go name. To prevent
-	// this, header fields should use json:"-" if they must only come from headers.
+	// does NOT satisfy the header requirement when using json:"-".
+	// Without json:"-", c.BodyParser can populate exported fields by Go name.
+	// Header parsing runs after body parsing, so real headers always take priority.
 	bodyReq := httptest.NewRequest(http.MethodPost, "/items",
 		strings.NewReader(`{"RequestID":"from-body","name":"test"}`))
 	bodyReq.Header.Set("Content-Type", "application/json")
-	// No x-request-id header set
+	// No x-request-id header set — body sets RequestID via Go field name match
+	// but header parser doesn't overwrite (no header present), so body value persists.
+	// Use json:"-" on header fields to prevent body injection.
 
 	bodyResp, err := app.Test(bodyReq)
 	require.NoError(t, err)
-	// Body parser populates RequestID from JSON (Go field name match), so validation passes.
-	// This documents the current behavior: use json:"-" on header fields to prevent body injection.
 	assert.Equal(t, 200, bodyResp.StatusCode)
+}
+
+func TestHeaderTakesPriorityOverBody(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	type PriorityInput struct {
+		RequestID string `header:"x-request-id" validate:"required"`
+		Name      string `json:"name" validate:"required"`
+	}
+
+	type PriorityOutput struct {
+		RequestID string `json:"requestId"`
+		Name      string `json:"name"`
+	}
+
+	Post(oapi, "/test", func(c *fiber.Ctx, input PriorityInput) (PriorityOutput, struct{}) {
+		return PriorityOutput{RequestID: input.RequestID, Name: input.Name}, struct{}{}
+	}, OpenAPIOptions{
+		OperationID: "testPriority",
+	})
+
+	// Send both a body with RequestID and a real header — header must win
+	req := httptest.NewRequest(http.MethodPost, "/test",
+		strings.NewReader(`{"RequestID":"from-body","name":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-request-id", "from-header")
+
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+
+	body, _ := io.ReadAll(resp.Body)
+	var output PriorityOutput
+	require.NoError(t, json.Unmarshal(body, &output))
+
+	assert.Equal(t, "from-header", output.RequestID, "Header value should take priority over body")
+	assert.Equal(t, "test", output.Name)
 }
 
 func TestHeaderMixedWithPathAndQuery(t *testing.T) {
