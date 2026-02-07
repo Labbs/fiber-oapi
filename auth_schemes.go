@@ -3,6 +3,7 @@ package fiberoapi
 import (
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -170,7 +171,7 @@ func parseAWSSigV4Header(header string) (*AWSSignatureParams, error) {
 	params := &AWSSignatureParams{}
 	content := strings.TrimPrefix(header, "AWS4-HMAC-SHA256 ")
 
-	parts := strings.Split(content, ", ")
+	parts := strings.Split(content, ",")
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
 		kv := strings.SplitN(part, "=", 2)
@@ -216,10 +217,33 @@ func validateWithScheme(c *fiber.Ctx, scheme SecurityScheme, authService Authori
 	}
 }
 
+// AuthError represents an authentication or authorization failure with an HTTP status code.
+type AuthError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *AuthError) Error() string {
+	return e.Message
+}
+
+// ScopeError represents an authorization failure due to missing scopes (403, not 401).
+type ScopeError struct {
+	Scope string
+}
+
+func (e *ScopeError) Error() string {
+	return fmt.Sprintf("missing required scope: %s", e.Scope)
+}
+
 // validateSecurityRequirement validates a single OpenAPI security requirement.
 // A requirement is a map of scheme-name -> required-scopes.
 // ALL schemes in a requirement must validate (AND semantics).
 func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, schemes map[string]SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
+	if len(requirement) == 0 {
+		return nil, fmt.Errorf("empty security requirement")
+	}
+
 	var lastAuthCtx *AuthContext
 
 	for schemeName, requiredScopes := range requirement {
@@ -236,7 +260,7 @@ func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, 
 		// Check required scopes
 		for _, scope := range requiredScopes {
 			if !authService.HasScope(authCtx, scope) {
-				return nil, fmt.Errorf("missing required scope: %s", scope)
+				return nil, &ScopeError{Scope: scope}
 			}
 		}
 
@@ -248,9 +272,16 @@ func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, 
 
 // buildDefaultFromSchemes generates security requirements from configured schemes.
 // Each scheme becomes a separate alternative (OR semantics).
+// Schemes are sorted by name for deterministic ordering.
 func buildDefaultFromSchemes(schemes map[string]SecurityScheme) []map[string][]string {
-	result := make([]map[string][]string, 0, len(schemes))
+	names := make([]string, 0, len(schemes))
 	for name := range schemes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	result := make([]map[string][]string, 0, len(names))
+	for _, name := range names {
 		result = append(result, map[string][]string{name: {}})
 	}
 	return result
