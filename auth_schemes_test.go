@@ -2,6 +2,7 @@ package fiberoapi
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -67,6 +68,48 @@ func (m *MockAPIKeyAuthService) ValidateAPIKey(key string, location string, para
 		UserID: "apikey-user",
 		Roles:  []string{"user"},
 		Scopes: []string{"read"},
+	}, nil
+}
+
+// MockBearerAndAPIKeyAuthService implements both Bearer (ValidateToken) and API Key validation.
+// Used for testing AND-semantics (multi-scheme requirements).
+type MockBearerAndAPIKeyAuthService struct {
+	MockAuthService
+	validKeys map[string]string // key -> userID
+}
+
+func NewMockBearerAndAPIKeyAuthService() *MockBearerAndAPIKeyAuthService {
+	return &MockBearerAndAPIKeyAuthService{
+		MockAuthService: *NewMockAuthService(),
+		validKeys: map[string]string{
+			"my-api-key-123": "user-123", // same UserID as MockAuthService
+		},
+	}
+}
+
+func (m *MockBearerAndAPIKeyAuthService) ValidateAPIKey(key string, location string, paramName string) (*AuthContext, error) {
+	userID, exists := m.validKeys[key]
+	if !exists {
+		return nil, fmt.Errorf("invalid API key")
+	}
+	return &AuthContext{
+		UserID: userID,
+		Roles:  []string{"api-client"},
+		Scopes: []string{"api-access"},
+		Claims: map[string]interface{}{"key_location": location},
+	}, nil
+}
+
+// MockConflictingAPIKeyAuthService returns a different UserID than Bearer to test conflict detection.
+type MockConflictingAPIKeyAuthService struct {
+	MockAuthService
+}
+
+func (m *MockConflictingAPIKeyAuthService) ValidateAPIKey(key string, location string, paramName string) (*AuthContext, error) {
+	return &AuthContext{
+		UserID: "different-user-999",
+		Roles:  []string{"other"},
+		Scopes: []string{"other"},
 	}, nil
 }
 
@@ -216,8 +259,8 @@ func TestValidateBasicAuth_ServiceDoesNotImplement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	if resp.StatusCode != 401 {
-		t.Errorf("Expected status 401, got %d", resp.StatusCode)
+	if resp.StatusCode != 500 {
+		t.Errorf("Expected status 500 (server misconfiguration), got %d", resp.StatusCode)
 	}
 }
 
@@ -339,8 +382,8 @@ func TestValidateAPIKey_ServiceDoesNotImplement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	if resp.StatusCode != 401 {
-		t.Errorf("Expected status 401, got %d", resp.StatusCode)
+	if resp.StatusCode != 500 {
+		t.Errorf("Expected status 500 (server misconfiguration), got %d", resp.StatusCode)
 	}
 }
 
@@ -438,8 +481,8 @@ func TestValidateAWSSigV4_ServiceDoesNotImplement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-	if resp.StatusCode != 401 {
-		t.Errorf("Expected status 401, got %d", resp.StatusCode)
+	if resp.StatusCode != 500 {
+		t.Errorf("Expected status 500 (server misconfiguration), got %d", resp.StatusCode)
 	}
 }
 
@@ -689,4 +732,136 @@ func TestSmartAuthMiddleware_WithSecuritySchemes(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Errorf("Expected /docs to be accessible without auth, got %d", resp.StatusCode)
 	}
+}
+
+// --- AND-semantics context merging tests ---
+
+func TestValidateSecurityRequirement_ANDMergesContexts(t *testing.T) {
+	app := fiber.New()
+	authService := NewMockBearerAndAPIKeyAuthService()
+
+	schemes := map[string]SecurityScheme{
+		"apiKey":     {Type: "apiKey", In: "header", Name: "X-API-Key"},
+		"bearerAuth": {Type: "http", Scheme: "bearer"},
+	}
+	// AND semantics: both Bearer AND API Key must be present
+	requirement := map[string][]string{
+		"bearerAuth": {},
+		"apiKey":     {},
+	}
+
+	app.Get("/test", func(c *fiber.Ctx) error {
+		authCtx, err := validateSecurityRequirement(c, requirement, schemes, authService)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{
+			"user_id": authCtx.UserID,
+			"roles":   authCtx.Roles,
+			"scopes":  authCtx.Scopes,
+			"claims":  authCtx.Claims,
+		})
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	req.Header.Set("X-API-Key", "my-api-key-123")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		t.Fatalf("Expected status 200, got %d", resp.StatusCode)
+	}
+
+	// Parse response to verify merging
+	var result map[string]interface{}
+	if err := parseJSONResponse(resp, &result); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	// UserID should be consistent (both return "user-123")
+	if result["user_id"] != "user-123" {
+		t.Errorf("Expected user_id 'user-123', got %v", result["user_id"])
+	}
+
+	// Roles should be merged: ["user"] from Bearer + ["api-client"] from API Key
+	roles, ok := result["roles"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected roles to be array, got %T", result["roles"])
+	}
+	roleSet := make(map[string]bool)
+	for _, r := range roles {
+		roleSet[r.(string)] = true
+	}
+	for _, expected := range []string{"user", "api-client"} {
+		if !roleSet[expected] {
+			t.Errorf("Expected role %q in merged context, got roles: %v", expected, roles)
+		}
+	}
+
+	// Scopes should be merged (with dedup): ["read", "write"] from Bearer + ["api-access"] from API Key
+	scopes, ok := result["scopes"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected scopes to be array, got %T", result["scopes"])
+	}
+	scopeSet := make(map[string]bool)
+	for _, s := range scopes {
+		scopeSet[s.(string)] = true
+	}
+	for _, expected := range []string{"read", "write", "api-access"} {
+		if !scopeSet[expected] {
+			t.Errorf("Expected scope %q in merged context, got scopes: %v", expected, scopes)
+		}
+	}
+
+	// Claims should contain API Key's claims
+	claims, ok := result["claims"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected claims to be map, got %T", result["claims"])
+	}
+	if claims["key_location"] != "header" {
+		t.Errorf("Expected claim key_location='header', got %v", claims["key_location"])
+	}
+}
+
+func TestValidateSecurityRequirement_ANDConflictingUserID(t *testing.T) {
+	app := fiber.New()
+	authService := &MockConflictingAPIKeyAuthService{
+		MockAuthService: *NewMockAuthService(),
+	}
+
+	schemes := map[string]SecurityScheme{
+		"apiKey":     {Type: "apiKey", In: "header", Name: "X-API-Key"},
+		"bearerAuth": {Type: "http", Scheme: "bearer"},
+	}
+	// AND semantics: both must pass, but they return different UserIDs
+	requirement := map[string][]string{
+		"bearerAuth": {},
+		"apiKey":     {},
+	}
+
+	app.Get("/test", func(c *fiber.Ctx) error {
+		_, err := validateSecurityRequirement(c, requirement, schemes, authService)
+		if err != nil {
+			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.SendStatus(200)
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Authorization", "Bearer valid-token")
+	req.Header.Set("X-API-Key", "any-key")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.StatusCode != 401 {
+		t.Errorf("Expected status 401 for conflicting UserIDs, got %d", resp.StatusCode)
+	}
+}
+
+func parseJSONResponse(resp *http.Response, target interface{}) error {
+	defer resp.Body.Close()
+	return json.NewDecoder(resp.Body).Decode(target)
 }
