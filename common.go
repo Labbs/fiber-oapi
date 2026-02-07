@@ -35,12 +35,6 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 		return input, err
 	}
 
-	// Parse header parameters
-	err = parseHeaderParams(c, &input)
-	if err != nil {
-		return input, err
-	}
-
 	// Parse body for POST/PUT methods only if there's content
 	method := c.Method()
 	if method == "POST" || method == "PUT" || method == "PATCH" {
@@ -101,6 +95,13 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 				}
 			}
 		}
+	}
+
+	// Parse header parameters after body parsing so headers always take priority
+	// over any values that c.BodyParser may have set via Go field name matching
+	err = parseHeaderParams(c, &input)
+	if err != nil {
+		return input, err
 	}
 
 	// Validate input if enabled in configuration
