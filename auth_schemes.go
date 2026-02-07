@@ -116,7 +116,7 @@ func validateAPIKey(c *fiber.Ctx, scheme SecurityScheme, authService Authorizati
 	case "cookie":
 		key = c.Cookies(scheme.Name)
 	default:
-		return nil, fmt.Errorf("unsupported API Key location: %s", scheme.In)
+		return nil, &AuthError{StatusCode: 500, Message: fmt.Sprintf("unsupported API Key location: %s", scheme.In)}
 	}
 
 	if key == "" {
