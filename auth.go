@@ -139,36 +139,42 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 	}
 }
 
-// validateAuthorization validates permissions based on tags
-func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService) error {
+// validateAuthorization validates permissions based on configured security schemes.
+// When SecuritySchemes is empty, it falls back to Bearer-only validation for backward compatibility.
+func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService, config *Config) error {
 	if authService == nil {
 		return nil
 	}
 
-	// Extract and validate the token directly
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return fmt.Errorf("authentication required")
+	// Backward compatibility: if no SecuritySchemes are configured,
+	// fall back to Bearer-only validation (original behavior).
+	if config == nil || len(config.SecuritySchemes) == 0 {
+		authCtx, err := validateBearerToken(c, authService)
+		if err != nil {
+			return err
+		}
+		c.Locals("auth", authCtx)
+		return validateResourceAccess(c, authCtx, input, authService)
 	}
 
-	// Check Bearer format
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return fmt.Errorf("invalid authorization header format")
+	// Multi-scheme validation path
+	securityReqs := config.DefaultSecurity
+	if len(securityReqs) == 0 {
+		securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
 	}
 
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// Validate the token
-	authCtx, err := authService.ValidateToken(token)
-	if err != nil {
-		return fmt.Errorf("invalid token: %v", err)
+	// Try each security requirement (OR semantics per OpenAPI spec)
+	var lastErr error
+	for _, requirement := range securityReqs {
+		authCtx, err := validateSecurityRequirement(c, requirement, config.SecuritySchemes, authService)
+		if err == nil {
+			c.Locals("auth", authCtx)
+			return validateResourceAccess(c, authCtx, input, authService)
+		}
+		lastErr = err
 	}
 
-	// Store auth context for later use
-	c.Locals("auth", authCtx)
-
-	// Analyze authorization tags in the struct
-	return validateResourceAccess(c, authCtx, input, authService)
+	return lastErr
 }
 
 // validateResourceAccess validates resource access based on tags
