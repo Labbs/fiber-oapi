@@ -75,13 +75,22 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 		}
 
 		status := 401
-		var scopeErr *ScopeError
-		if errors.As(lastErr, &scopeErr) {
-			status = 403
+		errorLabel := "Authentication failed"
+		var authErr *AuthError
+		if errors.As(lastErr, &authErr) {
+			status = authErr.StatusCode
+			if status >= 500 {
+				errorLabel = "Server configuration error"
+			}
+		} else {
+			var scopeErr *ScopeError
+			if errors.As(lastErr, &scopeErr) {
+				status = 403
+			}
 		}
 
 		return c.Status(status).JSON(fiber.Map{
-			"error":   "Authentication failed",
+			"error":   errorLabel,
 			"details": lastErr.Error(),
 		})
 	}
@@ -93,8 +102,9 @@ func BasicAuthMiddleware(validator AuthorizationService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authCtx, err := validateBasicAuth(c, validator)
 		if err != nil {
-			return c.Status(401).JSON(fiber.Map{
-				"error":   "Basic authentication failed",
+			status, label := classifyAuthError(err)
+			return c.Status(status).JSON(fiber.Map{
+				"error":   label,
 				"details": err.Error(),
 			})
 		}
@@ -110,8 +120,9 @@ func APIKeyMiddleware(validator AuthorizationService, scheme SecurityScheme) fib
 	return func(c *fiber.Ctx) error {
 		authCtx, err := validateAPIKey(c, scheme, validator)
 		if err != nil {
-			return c.Status(401).JSON(fiber.Map{
-				"error":   "API Key authentication failed",
+			status, label := classifyAuthError(err)
+			return c.Status(status).JSON(fiber.Map{
+				"error":   label,
 				"details": err.Error(),
 			})
 		}
@@ -127,8 +138,9 @@ func AWSSignatureMiddleware(validator AuthorizationService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authCtx, err := validateAWSSigV4(c, validator)
 		if err != nil {
-			return c.Status(401).JSON(fiber.Map{
-				"error":   "AWS Signature V4 authentication failed",
+			status, label := classifyAuthError(err)
+			return c.Status(status).JSON(fiber.Map{
+				"error":   label,
 				"details": err.Error(),
 			})
 		}
@@ -136,4 +148,16 @@ func AWSSignatureMiddleware(validator AuthorizationService) fiber.Handler {
 		c.Locals("auth", authCtx)
 		return c.Next()
 	}
+}
+
+// classifyAuthError returns the HTTP status and error label for an authentication error.
+func classifyAuthError(err error) (int, string) {
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		if authErr.StatusCode >= 500 {
+			return authErr.StatusCode, "Server configuration error"
+		}
+		return authErr.StatusCode, "Authentication failed"
+	}
+	return 401, "Authentication failed"
 }
