@@ -175,7 +175,11 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 		lastErr = err
 	}
 
-	// Wrap the error with the appropriate status code
+	// Propagate typed errors (AuthError, ScopeError) without re-wrapping
+	var existingAuthErr *AuthError
+	if errors.As(lastErr, &existingAuthErr) {
+		return lastErr
+	}
 	var scopeErr *ScopeError
 	if errors.As(lastErr, &scopeErr) {
 		return &AuthError{StatusCode: 403, Message: lastErr.Error()}
