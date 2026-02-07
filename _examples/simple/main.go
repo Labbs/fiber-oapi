@@ -32,6 +32,7 @@ type CreateUserInput struct {
 	Email    string `json:"email" validate:"required,email"`
 	Age      int    `json:"age" validate:"required,min=13,max=120"`
 	Bio      string `json:"bio" validate:"omitempty,max=500"`
+	Internal string `json:"internal" openapi:"-"` // Hidden from OpenAPI docs, still parsed at runtime
 
 	RequestContext ContextRequest `json:"requestContext" validate:"required,dive"`
 }
@@ -41,6 +42,7 @@ type CreateUserOutput struct {
 	Message  string `json:"message"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
+	Token    string `json:"token" openapi:"-"` // Hidden from OpenAPI docs, still serialized in response
 }
 
 type CreateUserError struct {
