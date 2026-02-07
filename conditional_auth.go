@@ -159,6 +159,9 @@ func classifyAuthError(err error) (int, string) {
 		if authErr.StatusCode >= 500 {
 			return authErr.StatusCode, "Server configuration error"
 		}
+		if authErr.StatusCode == 403 {
+			return authErr.StatusCode, "Authorization failed"
+		}
 		return authErr.StatusCode, "Authentication failed"
 	}
 	return 401, "Authentication failed"
