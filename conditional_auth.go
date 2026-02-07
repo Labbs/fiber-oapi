@@ -55,12 +55,21 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 			securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
 		}
 
+		// Server configuration errors (5xx) short-circuit immediately since
+		// no alternative requirement can fix a misconfigured scheme.
 		var lastErr error
 		for _, requirement := range securityReqs {
 			authCtx, err := validateSecurityRequirement(c, requirement, config.SecuritySchemes, authService)
 			if err == nil {
 				c.Locals("auth", authCtx)
 				return c.Next()
+			}
+			var authErr *AuthError
+			if errors.As(err, &authErr) && authErr.StatusCode >= 500 {
+				return c.Status(authErr.StatusCode).JSON(fiber.Map{
+					"error":   "Server configuration error",
+					"details": authErr.Message,
+				})
 			}
 			lastErr = err
 		}
@@ -76,17 +85,9 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 
 		status := 401
 		errorLabel := "Authentication failed"
-		var authErr *AuthError
-		if errors.As(lastErr, &authErr) {
-			status = authErr.StatusCode
-			if status >= 500 {
-				errorLabel = "Server configuration error"
-			}
-		} else {
-			var scopeErr *ScopeError
-			if errors.As(lastErr, &scopeErr) {
-				status = 403
-			}
+		var scopeErr *ScopeError
+		if errors.As(lastErr, &scopeErr) {
+			status = 403
 		}
 
 		return c.Status(status).JSON(fiber.Map{
