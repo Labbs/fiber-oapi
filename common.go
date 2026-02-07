@@ -97,6 +97,13 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 		}
 	}
 
+	// Parse header parameters after body parsing so headers always take priority
+	// over any values that c.BodyParser may have set via Go field name matching
+	err = parseHeaderParams(c, &input)
+	if err != nil {
+		return input, err
+	}
+
 	// Validate input if enabled in configuration
 	if app.Config().EnableValidation {
 		err = validate.Struct(input)
@@ -204,8 +211,39 @@ func parseQueryParams(c *fiber.Ctx, input interface{}) error {
 	return nil
 }
 
+// Parse header parameters
+func parseHeaderParams(c *fiber.Ctx, input interface{}) error {
+	inputValue := reflect.ValueOf(input).Elem()
+	inputType := reflect.TypeOf(input).Elem()
+
+	for i := 0; i < inputType.NumField(); i++ {
+		field := inputType.Field(i)
+		if headerTag := field.Tag.Get("header"); headerTag != "" {
+			headerValue := c.Get(headerTag)
+			if headerValue != "" {
+				fieldValue := inputValue.Field(i)
+				if fieldValue.CanSet() {
+					if err := setFieldValue(fieldValue, headerValue); err != nil {
+						return fmt.Errorf("failed to parse header param %s: %w", headerTag, err)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // Helper function to set field values with type conversion
 func setFieldValue(fieldValue reflect.Value, value string) error {
+	// Handle pointer types: allocate and recurse into the pointed-to value
+	if fieldValue.Kind() == reflect.Ptr {
+		if fieldValue.IsNil() {
+			fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
+		}
+		return setFieldValue(fieldValue.Elem(), value)
+	}
+
 	switch fieldValue.Kind() {
 	case reflect.String:
 		fieldValue.SetString(value)
@@ -351,6 +389,26 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 				"in":          "query",
 				"required":    required,
 				"description": getFieldDescription(field, "Query parameter"),
+				"schema":      getSchemaForType(field.Type),
+			}
+			parameters = append(parameters, param)
+		}
+
+		// Process header parameters
+		if headerTag := field.Tag.Get("header"); headerTag != "" {
+			// OpenAPI 3.0 specifies that header parameters named "Accept", "Content-Type",
+			// or "Authorization" are ignored by tooling when in: header. Skip these reserved names.
+			switch strings.ToLower(headerTag) {
+			case "accept", "content-type", "authorization":
+				continue
+			}
+
+			required := isQueryFieldRequired(field)
+			param := map[string]interface{}{
+				"name":        headerTag,
+				"in":          "header",
+				"required":    required,
+				"description": getFieldDescription(field, "Header parameter"),
 				"schema":      getSchemaForType(field.Type),
 			}
 			parameters = append(parameters, param)
