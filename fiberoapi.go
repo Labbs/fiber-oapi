@@ -384,6 +384,11 @@ func collectAllTypes(t reflect.Type, collected map[string]reflect.Type) {
 				continue
 			}
 
+			// Skip fields hidden from OpenAPI documentation
+			if field.Tag.Get("openapi") == "-" {
+				continue
+			}
+
 			// Skip fields with json:"-" tag
 			if jsonTag := field.Tag.Get("json"); jsonTag == "-" {
 				continue
@@ -572,6 +577,11 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 		for i := 0; i < t.NumField(); i++ {
 			field := t.Field(i)
 			if !field.IsExported() {
+				continue
+			}
+
+			// Skip fields hidden from OpenAPI documentation
+			if field.Tag.Get("openapi") == "-" {
 				continue
 			}
 

@@ -365,6 +365,11 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 			continue
 		}
 
+		// Skip fields hidden from OpenAPI documentation
+		if field.Tag.Get("openapi") == "-" {
+			continue
+		}
+
 		// Process path parameters
 		if pathTag := field.Tag.Get("path"); pathTag != "" {
 			// Path parameters are always required regardless of type or validation tags.
