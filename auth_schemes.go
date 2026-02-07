@@ -194,8 +194,8 @@ func parseAWSSigV4Header(header string) (*AWSSignatureParams, error) {
 		}
 	}
 
-	if params.AccessKeyID == "" || params.Signature == "" {
-		return nil, fmt.Errorf("incomplete AWS SigV4 header: missing Credential or Signature")
+	if params.AccessKeyID == "" || params.Signature == "" || len(params.SignedHeaders) == 0 {
+		return nil, fmt.Errorf("incomplete AWS SigV4 header: missing Credential, SignedHeaders, or Signature")
 	}
 
 	return params, nil
@@ -244,9 +244,18 @@ func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, 
 		return nil, fmt.Errorf("empty security requirement")
 	}
 
+	// Sort scheme names for deterministic validation order
+	schemeNames := make([]string, 0, len(requirement))
+	for name := range requirement {
+		schemeNames = append(schemeNames, name)
+	}
+	sort.Strings(schemeNames)
+
 	var lastAuthCtx *AuthContext
 
-	for schemeName, requiredScopes := range requirement {
+	for _, schemeName := range schemeNames {
+		requiredScopes := requirement[schemeName]
+
 		scheme, exists := schemes[schemeName]
 		if !exists {
 			return nil, fmt.Errorf("unknown security scheme: %s", schemeName)
