@@ -575,8 +575,8 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 				continue
 			}
 
-			// Skip fields that are path or query parameters - they are handled separately
-			if field.Tag.Get("path") != "" || field.Tag.Get("query") != "" {
+			// Skip fields that are path, query, or header parameters - they are handled separately
+			if field.Tag.Get("path") != "" || field.Tag.Get("query") != "" || field.Tag.Get("header") != "" {
 				continue
 			}
 
