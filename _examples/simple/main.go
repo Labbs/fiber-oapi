@@ -12,7 +12,8 @@ type ContextRequest struct {
 }
 
 type GetInput struct {
-	Name string `path:"name" validate:"required,min=2"`
+	Name      string `path:"name" validate:"required,min=2"`
+	RequestID string `header:"x-request-id" validate:"required"`
 }
 
 type GetOutput struct {
@@ -93,10 +94,10 @@ func main() {
 	// Example 2: Using default configuration (commented out)
 	// appOApi := fiberoapi.New(app) // Will use defaults: /docs and /openapi.json
 
-	// Route GET avec validation
+	// Route GET avec validation (path + header parameters)
 	fiberoapi.Get(appOApi, "/greeting/:name", func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
 		name := input.Name
-		return GetOutput{Message: "Hello " + name}, GetError{}
+		return GetOutput{Message: fmt.Sprintf("Hello %s (request: %s)", name, input.RequestID)}, GetError{}
 	}, fiberoapi.OpenAPIOptions{
 		OperationID: "get-greeting",
 		Tags:        []string{"greeting"},
