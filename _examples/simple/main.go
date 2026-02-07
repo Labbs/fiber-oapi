@@ -13,7 +13,7 @@ type ContextRequest struct {
 
 type GetInput struct {
 	Name      string `path:"name" validate:"required,min=2"`
-	RequestID string `header:"x-request-id" validate:"required"`
+	RequestID string `header:"x-request-id" validate:"omitempty"`
 }
 
 type GetOutput struct {
