@@ -8,7 +8,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// Authentication service with role management
+// Authentication service with role management.
+// Implements AuthorizationService, BasicAuthValidator, APIKeyValidator, and AWSSignatureValidator.
 type ExampleAuthService struct{}
 
 func (s *ExampleAuthService) ValidateToken(token string) (*fiberoapi.AuthContext, error) {
@@ -116,6 +117,75 @@ func (s *ExampleAuthService) GetUserPermissions(ctx *fiberoapi.AuthContext, reso
 	}, nil
 }
 
+// ValidateBasicAuth implements BasicAuthValidator for HTTP Basic authentication (curl --user).
+func (s *ExampleAuthService) ValidateBasicAuth(username, password string) (*fiberoapi.AuthContext, error) {
+	// Example credentials
+	users := map[string]string{
+		"admin": "admin-pass",
+		"user":  "user-pass",
+	}
+
+	expectedPassword, exists := users[username]
+	if !exists || password != expectedPassword {
+		return nil, fmt.Errorf("invalid credentials for user: %s", username)
+	}
+
+	roles := []string{"user"}
+	scopes := []string{"read", "write"}
+	if username == "admin" {
+		roles = []string{"admin", "user"}
+		scopes = []string{"read", "write", "delete", "share"}
+	}
+
+	return &fiberoapi.AuthContext{
+		UserID: username,
+		Roles:  roles,
+		Scopes: scopes,
+	}, nil
+}
+
+// ValidateAPIKey implements APIKeyValidator for API Key authentication.
+func (s *ExampleAuthService) ValidateAPIKey(key string, location string, paramName string) (*fiberoapi.AuthContext, error) {
+	validKeys := map[string]string{
+		"my-secret-api-key": "apikey-user-1",
+		"another-api-key":   "apikey-user-2",
+	}
+
+	userID, exists := validKeys[key]
+	if !exists {
+		return nil, fmt.Errorf("invalid API key")
+	}
+
+	return &fiberoapi.AuthContext{
+		UserID: userID,
+		Roles:  []string{"user"},
+		Scopes: []string{"read"},
+	}, nil
+}
+
+// ValidateAWSSignature implements AWSSignatureValidator for AWS SigV4 authentication.
+func (s *ExampleAuthService) ValidateAWSSignature(params *fiberoapi.AWSSignatureParams) (*fiberoapi.AuthContext, error) {
+	// In a real implementation, you would verify the HMAC-SHA256 signature
+	// using the secret key associated with the AccessKeyID.
+	validKeys := map[string]bool{
+		"AKIAIOSFODNN7EXAMPLE": true,
+	}
+
+	if !validKeys[params.AccessKeyID] {
+		return nil, fmt.Errorf("invalid access key: %s", params.AccessKeyID)
+	}
+
+	return &fiberoapi.AuthContext{
+		UserID: "aws-service-" + params.AccessKeyID,
+		Roles:  []string{"service"},
+		Scopes: []string{"read", "write"},
+		Claims: map[string]interface{}{
+			"region":  params.Region,
+			"service": params.Service,
+		},
+	}, nil
+}
+
 type CreateUserRequest struct {
 	Name string `json:"name" validate:"required,min=2,max=50"`
 }
@@ -175,11 +245,31 @@ func main() {
 				Type:         "http",
 				Scheme:       "bearer",
 				BearerFormat: "JWT",
-				Description:  "JWT Bearer token",
+				Description:  "JWT Bearer token authentication",
+			},
+			"basicAuth": {
+				Type:        "http",
+				Scheme:      "basic",
+				Description: "HTTP Basic authentication (curl --user user:pass)",
+			},
+			"apiKeyAuth": {
+				Type:        "apiKey",
+				In:          "header",
+				Name:        "X-API-Key",
+				Description: "API Key authentication via header",
+			},
+			"awsSigV4": {
+				Type:        "http",
+				Scheme:      "AWS4-HMAC-SHA256",
+				Description: "AWS Signature V4 authentication",
 			},
 		},
+		// Any of these schemes can be used (OR semantics)
 		DefaultSecurity: []map[string][]string{
 			{"bearerAuth": {}},
+			{"basicAuth": {}},
+			{"apiKeyAuth": {}},
+			{"awsSigV4": {}},
 		},
 	}
 
@@ -411,44 +501,41 @@ func main() {
 	fmt.Println("📚 Documentation: http://localhost:3002/docs")
 	fmt.Println("📄 OpenAPI JSON: http://localhost:3002/openapi.json")
 	fmt.Println("")
+	fmt.Println("🔑 Méthodes d'authentification supportées:")
+	fmt.Println("   Bearer Token:  Authorization: Bearer <token>")
+	fmt.Println("   Basic Auth:    Authorization: Basic base64(user:pass)  (curl --user user:pass)")
+	fmt.Println("   API Key:       X-API-Key: <key>")
+	fmt.Println("   AWS SigV4:     Authorization: AWS4-HMAC-SHA256 Credential=...")
+	fmt.Println("")
 	fmt.Println("🔑 Tokens de test disponibles:")
 	fmt.Println("   admin-token     -> rôles: [admin, user], scopes: [read, write, delete, share]")
 	fmt.Println("   editor-token    -> rôles: [editor, user], scopes: [read, write, share]")
 	fmt.Println("   user-token      -> rôles: [user], scopes: [read, write]")
 	fmt.Println("   readonly-token  -> rôles: [user], scopes: [read]")
 	fmt.Println("")
-	fmt.Println("🌍 Endpoints par niveau d'accès:")
-	fmt.Println("   GET    /health                            (public)")
-	fmt.Println("   GET    /me                                (auth simple)")
-	fmt.Println("   GET    /documents/:id                     (user + read)")
-	fmt.Println("   PUT    /documents/:id                     (user + write)")
-	fmt.Println("   POST   /documents/:id/share               (scope: share)")
-	fmt.Println("   DELETE /documents/:id                     (admin + delete)")
-	fmt.Println("   POST   /users                             (admin + write)")
+	fmt.Println("🔑 Comptes Basic Auth:")
+	fmt.Println("   admin:admin-pass  -> rôles: [admin, user]")
+	fmt.Println("   user:user-pass    -> rôles: [user]")
+	fmt.Println("")
+	fmt.Println("🔑 API Keys:")
+	fmt.Println("   my-secret-api-key  -> read only")
+	fmt.Println("   another-api-key    -> read only")
 	fmt.Println("")
 	fmt.Println("🧪 Tests suggérés:")
-	fmt.Println("   # Test admin - création d'utilisateur")
-	fmt.Println(`   curl -X POST -H 'Authorization: Bearer admin-token' -H 'Content-Type: application/json' -d '{"name":"John Doe"}' http://localhost:3002/users`)
+	fmt.Println("   # Bearer Token")
+	fmt.Println("   curl -H 'Authorization: Bearer admin-token' http://localhost:3002/me")
 	fmt.Println("")
-	fmt.Println("   # Test utilisateur normal (devrait échouer)")
-	fmt.Println(`   curl -X POST -H 'Authorization: Bearer readonly-token' -H 'Content-Type: application/json' -d '{"name":"Jane Doe"}' http://localhost:3002/users`)
+	fmt.Println("   # Basic Auth (curl --user)")
+	fmt.Println("   curl --user admin:admin-pass http://localhost:3002/me")
 	fmt.Println("")
-	fmt.Println("   # Test lecture document")
-	fmt.Println("   curl -H 'Authorization: Bearer user-token' http://localhost:3002/documents/33cd10d7-d80f-4fd2-9107-7423997393d2")
+	fmt.Println("   # API Key")
+	fmt.Println("   curl -H 'X-API-Key: my-secret-api-key' http://localhost:3002/documents/doc-1")
 	fmt.Println("")
-	fmt.Println("   # Test modification document")
-	fmt.Println(`   curl -X PUT -H 'Authorization: Bearer user-token' -H 'Content-Type: application/json' -d '{"title":"Mon Document","content":"Contenu modifié"}' http://localhost:3002/documents/33cd10d7-d80f-4fd2-9107-7423997393d2`)
+	fmt.Println("   # AWS SigV4")
+	fmt.Println("   curl -H 'Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20250101/us-east-1/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature=abc123' http://localhost:3002/me")
 	fmt.Println("")
-	fmt.Println("   # Test partage (éditeur/admin seulement)")
-	fmt.Println("   curl -X POST -H 'Authorization: Bearer editor-token' http://localhost:3002/documents/33cd10d7-d80f-4fd2-9107-7423997393d2/share")
-	fmt.Println("")
-	fmt.Println("   # Test suppression (admin seulement)")
-	fmt.Println("   curl -X DELETE -H 'Authorization: Bearer admin-token' http://localhost:3002/documents/33cd10d7-d80f-4fd2-9107-7423997393d2")
-	fmt.Println("")
-	fmt.Println("   # Test endpoints publics")
+	fmt.Println("   # Public endpoint")
 	fmt.Println("   curl http://localhost:3002/health")
-	fmt.Println("   curl -H 'Authorization: Bearer user-token' http://localhost:3002/me")
-	fmt.Println("   curl -H 'Authorization: Bearer user-token' http://localhost:3002/status")
 
 	app.Listen(":3002")
 }
