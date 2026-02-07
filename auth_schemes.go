@@ -74,7 +74,7 @@ func validateBearerToken(c *fiber.Ctx, authService AuthorizationService) (*AuthC
 func validateBasicAuth(c *fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
 	basicValidator, ok := authService.(BasicAuthValidator)
 	if !ok {
-		return nil, fmt.Errorf("Basic Auth scheme configured but AuthService does not implement BasicAuthValidator")
+		return nil, &AuthError{StatusCode: 500, Message: "Basic Auth scheme configured but AuthService does not implement BasicAuthValidator"}
 	}
 
 	authHeader := c.Get("Authorization")
@@ -104,7 +104,7 @@ func validateBasicAuth(c *fiber.Ctx, authService AuthorizationService) (*AuthCon
 func validateAPIKey(c *fiber.Ctx, scheme SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
 	apiKeyValidator, ok := authService.(APIKeyValidator)
 	if !ok {
-		return nil, fmt.Errorf("API Key scheme configured but AuthService does not implement APIKeyValidator")
+		return nil, &AuthError{StatusCode: 500, Message: "API Key scheme configured but AuthService does not implement APIKeyValidator"}
 	}
 
 	var key string
@@ -130,7 +130,7 @@ func validateAPIKey(c *fiber.Ctx, scheme SecurityScheme, authService Authorizati
 func validateAWSSigV4(c *fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
 	awsValidator, ok := authService.(AWSSignatureValidator)
 	if !ok {
-		return nil, fmt.Errorf("AWS SigV4 scheme configured but AuthService does not implement AWSSignatureValidator")
+		return nil, &AuthError{StatusCode: 500, Message: "AWS SigV4 scheme configured but AuthService does not implement AWSSignatureValidator"}
 	}
 
 	authHeader := c.Get("Authorization")
@@ -213,7 +213,7 @@ func validateWithScheme(c *fiber.Ctx, scheme SecurityScheme, authService Authori
 	case scheme.Type == "http" && strings.EqualFold(scheme.Scheme, "aws4-hmac-sha256"):
 		return validateAWSSigV4(c, authService)
 	default:
-		return nil, fmt.Errorf("unsupported security scheme: type=%s scheme=%s", scheme.Type, scheme.Scheme)
+		return nil, &AuthError{StatusCode: 500, Message: fmt.Sprintf("unsupported security scheme: type=%s scheme=%s", scheme.Type, scheme.Scheme)}
 	}
 }
 
@@ -239,9 +239,11 @@ func (e *ScopeError) Error() string {
 // validateSecurityRequirement validates a single OpenAPI security requirement.
 // A requirement is a map of scheme-name -> required-scopes.
 // ALL schemes in a requirement must validate (AND semantics).
+// When multiple schemes are present, their AuthContexts are merged: UserIDs must
+// match (or be empty), and roles/scopes/claims are combined.
 func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, schemes map[string]SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
 	if len(requirement) == 0 {
-		return nil, fmt.Errorf("empty security requirement")
+		return nil, &AuthError{StatusCode: 500, Message: "empty security requirement"}
 	}
 
 	// Sort scheme names for deterministic validation order
@@ -251,14 +253,14 @@ func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, 
 	}
 	sort.Strings(schemeNames)
 
-	var lastAuthCtx *AuthContext
+	var merged *AuthContext
 
 	for _, schemeName := range schemeNames {
 		requiredScopes := requirement[schemeName]
 
 		scheme, exists := schemes[schemeName]
 		if !exists {
-			return nil, fmt.Errorf("unknown security scheme: %s", schemeName)
+			return nil, &AuthError{StatusCode: 500, Message: fmt.Sprintf("unknown security scheme: %s", schemeName)}
 		}
 
 		authCtx, err := validateWithScheme(c, scheme, authService)
@@ -273,10 +275,56 @@ func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, 
 			}
 		}
 
-		lastAuthCtx = authCtx
+		if merged == nil {
+			// First scheme — clone the context as the base
+			merged = &AuthContext{
+				UserID: authCtx.UserID,
+				Roles:  append([]string{}, authCtx.Roles...),
+				Scopes: append([]string{}, authCtx.Scopes...),
+			}
+			if authCtx.Claims != nil {
+				merged.Claims = make(map[string]interface{}, len(authCtx.Claims))
+				for k, v := range authCtx.Claims {
+					merged.Claims[k] = v
+				}
+			}
+		} else {
+			// Subsequent schemes — verify identity consistency and merge
+			if authCtx.UserID != "" && merged.UserID != "" && authCtx.UserID != merged.UserID {
+				return nil, fmt.Errorf("security scheme conflict: scheme %s resolved to user %q, expected %q", schemeName, authCtx.UserID, merged.UserID)
+			}
+			if merged.UserID == "" && authCtx.UserID != "" {
+				merged.UserID = authCtx.UserID
+			}
+			merged.Roles = appendUnique(merged.Roles, authCtx.Roles...)
+			merged.Scopes = appendUnique(merged.Scopes, authCtx.Scopes...)
+			if authCtx.Claims != nil {
+				if merged.Claims == nil {
+					merged.Claims = make(map[string]interface{})
+				}
+				for k, v := range authCtx.Claims {
+					merged.Claims[k] = v
+				}
+			}
+		}
 	}
 
-	return lastAuthCtx, nil
+	return merged, nil
+}
+
+// appendUnique appends values to a slice, skipping duplicates.
+func appendUnique(base []string, values ...string) []string {
+	seen := make(map[string]struct{}, len(base))
+	for _, v := range base {
+		seen[v] = struct{}{}
+	}
+	for _, v := range values {
+		if _, exists := seen[v]; !exists {
+			base = append(base, v)
+			seen[v] = struct{}{}
+		}
+	}
+	return base
 }
 
 // buildDefaultFromSchemes generates security requirements from configured schemes.
