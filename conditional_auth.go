@@ -88,6 +88,7 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 		var scopeErr *ScopeError
 		if errors.As(lastErr, &scopeErr) {
 			status = 403
+			errorLabel = "Authorization failed"
 		}
 
 		return c.Status(status).JSON(fiber.Map{
