@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -13,7 +14,7 @@ func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...str
 
 		// Verify if the current path is in the exclude list
 		for _, excludePath := range excludePaths {
-			if path == excludePath || strings.HasPrefix(path, excludePath) {
+			if excludePath != "" && (path == excludePath || strings.HasPrefix(path, excludePath)) {
 				return c.Next() // Skip authentication
 			}
 		}
@@ -64,9 +65,19 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 			lastErr = err
 		}
 
-		return c.Status(401).JSON(fiber.Map{
+		details := "no security schemes configured"
+		status := 401
+		if lastErr != nil {
+			details = lastErr.Error()
+			var scopeErr *ScopeError
+			if errors.As(lastErr, &scopeErr) {
+				status = 403
+			}
+		}
+
+		return c.Status(status).JSON(fiber.Map{
 			"error":   "Authentication failed",
-			"details": lastErr.Error(),
+			"details": details,
 		})
 	}
 }
