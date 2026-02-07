@@ -235,6 +235,14 @@ func parseHeaderParams(c *fiber.Ctx, input interface{}) error {
 
 // Helper function to set field values with type conversion
 func setFieldValue(fieldValue reflect.Value, value string) error {
+	// Handle pointer types: allocate and recurse into the pointed-to value
+	if fieldValue.Kind() == reflect.Ptr {
+		if fieldValue.IsNil() {
+			fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
+		}
+		return setFieldValue(fieldValue.Elem(), value)
+	}
+
 	switch fieldValue.Kind() {
 	case reflect.String:
 		fieldValue.SetString(value)
