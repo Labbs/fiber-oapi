@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -851,6 +852,19 @@ func Method[TInput any, TOutput any, TError any](
 	fiberHandler := func(c *fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
+			// Check for authentication/authorization errors first
+			var authErr *AuthError
+			if errors.As(err, &authErr) {
+				errType := "authentication_error"
+				if authErr.StatusCode == 403 {
+					errType = "authorization_error"
+				}
+				return c.Status(authErr.StatusCode).JSON(ErrorResponse{
+					Code:    authErr.StatusCode,
+					Details: authErr.Message,
+					Type:    errType,
+				})
+			}
 			// Use custom validation error handler if configured
 			if app.config.ValidationErrorHandler != nil {
 				return app.config.ValidationErrorHandler(c, err)
