@@ -164,13 +164,19 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 		securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
 	}
 
-	// Try each security requirement (OR semantics per OpenAPI spec)
+	// Try each security requirement (OR semantics per OpenAPI spec).
+	// Server configuration errors (5xx) short-circuit immediately since
+	// no alternative requirement can fix a misconfigured scheme.
 	var lastErr error
 	for _, requirement := range securityReqs {
 		authCtx, err := validateSecurityRequirement(c, requirement, config.SecuritySchemes, authService)
 		if err == nil {
 			c.Locals("auth", authCtx)
 			return validateResourceAccess(c, authCtx, input, authService)
+		}
+		var authErr *AuthError
+		if errors.As(err, &authErr) && authErr.StatusCode >= 500 {
+			return err
 		}
 		lastErr = err
 	}
