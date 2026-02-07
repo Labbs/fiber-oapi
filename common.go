@@ -395,6 +395,13 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 
 		// Process header parameters
 		if headerTag := field.Tag.Get("header"); headerTag != "" {
+			// OpenAPI 3.0 specifies that header parameters named "Accept", "Content-Type",
+			// or "Authorization" are ignored by tooling when in: header. Skip these reserved names.
+			switch strings.ToLower(headerTag) {
+			case "accept", "content-type", "authorization":
+				continue
+			}
+
 			required := isQueryFieldRequired(field)
 			param := map[string]interface{}{
 				"name":        headerTag,
