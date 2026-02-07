@@ -65,19 +65,24 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 			lastErr = err
 		}
 
-		details := "no security schemes configured"
+		if lastErr == nil {
+			// No security requirements were configured — this is a server misconfiguration,
+			// not a client authentication failure.
+			return c.Status(500).JSON(fiber.Map{
+				"error":   "Server configuration error",
+				"details": "no security schemes configured",
+			})
+		}
+
 		status := 401
-		if lastErr != nil {
-			details = lastErr.Error()
-			var scopeErr *ScopeError
-			if errors.As(lastErr, &scopeErr) {
-				status = 403
-			}
+		var scopeErr *ScopeError
+		if errors.As(lastErr, &scopeErr) {
+			status = 403
 		}
 
 		return c.Status(status).JSON(fiber.Map{
 			"error":   "Authentication failed",
-			"details": details,
+			"details": lastErr.Error(),
 		})
 	}
 }
