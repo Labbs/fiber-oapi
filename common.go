@@ -35,6 +35,12 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 		return input, err
 	}
 
+	// Parse header parameters
+	err = parseHeaderParams(c, &input)
+	if err != nil {
+		return input, err
+	}
+
 	// Parse body for POST/PUT methods only if there's content
 	method := c.Method()
 	if method == "POST" || method == "PUT" || method == "PATCH" {
@@ -204,6 +210,29 @@ func parseQueryParams(c *fiber.Ctx, input interface{}) error {
 	return nil
 }
 
+// Parse header parameters
+func parseHeaderParams(c *fiber.Ctx, input interface{}) error {
+	inputValue := reflect.ValueOf(input).Elem()
+	inputType := reflect.TypeOf(input).Elem()
+
+	for i := 0; i < inputType.NumField(); i++ {
+		field := inputType.Field(i)
+		if headerTag := field.Tag.Get("header"); headerTag != "" {
+			headerValue := c.Get(headerTag)
+			if headerValue != "" {
+				fieldValue := inputValue.Field(i)
+				if fieldValue.CanSet() {
+					if err := setFieldValue(fieldValue, headerValue); err != nil {
+						return fmt.Errorf("failed to parse header param %s: %w", headerTag, err)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // Helper function to set field values with type conversion
 func setFieldValue(fieldValue reflect.Value, value string) error {
 	switch fieldValue.Kind() {
@@ -351,6 +380,19 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 				"in":          "query",
 				"required":    required,
 				"description": getFieldDescription(field, "Query parameter"),
+				"schema":      getSchemaForType(field.Type),
+			}
+			parameters = append(parameters, param)
+		}
+
+		// Process header parameters
+		if headerTag := field.Tag.Get("header"); headerTag != "" {
+			required := isQueryFieldRequired(field)
+			param := map[string]interface{}{
+				"name":        headerTag,
+				"in":          "header",
+				"required":    required,
+				"description": getFieldDescription(field, "Header parameter"),
 				"schema":      getSchemaForType(field.Type),
 			}
 			parameters = append(parameters, param)
