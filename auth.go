@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -151,7 +152,7 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 	if config == nil || len(config.SecuritySchemes) == 0 {
 		authCtx, err := validateBearerToken(c, authService)
 		if err != nil {
-			return err
+			return &AuthError{StatusCode: 401, Message: err.Error()}
 		}
 		c.Locals("auth", authCtx)
 		return validateResourceAccess(c, authCtx, input, authService)
@@ -174,7 +175,12 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 		lastErr = err
 	}
 
-	return lastErr
+	// Wrap the error with the appropriate status code
+	var scopeErr *ScopeError
+	if errors.As(lastErr, &scopeErr) {
+		return &AuthError{StatusCode: 403, Message: lastErr.Error()}
+	}
+	return &AuthError{StatusCode: 401, Message: lastErr.Error()}
 }
 
 // validateResourceAccess validates resource access based on tags
