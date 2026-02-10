@@ -152,6 +152,16 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 	if config == nil || len(config.SecuritySchemes) == 0 {
 		authCtx, err := validateBearerToken(c, authService)
 		if err != nil {
+			// Preserve typed AuthError (including 5xx) and map ScopeError to 403,
+			// falling back to 401 only for untyped errors.
+			var authErr *AuthError
+			if errors.As(err, &authErr) {
+				return err
+			}
+			var scopeErr *ScopeError
+			if errors.As(err, &scopeErr) {
+				return &AuthError{StatusCode: 403, Message: err.Error()}
+			}
 			return &AuthError{StatusCode: 401, Message: err.Error()}
 		}
 		c.Locals("auth", authCtx)
