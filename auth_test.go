@@ -210,8 +210,8 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			t.Fatalf("Request failed: %v", err)
 		}
 
-		if resp.StatusCode != 400 {
-			t.Errorf("Expected status 400, got %d", resp.StatusCode)
+		if resp.StatusCode != 401 {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
 		}
 	})
 
@@ -257,8 +257,8 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			t.Fatalf("Request failed: %v", err)
 		}
 
-		if resp.StatusCode != 400 {
-			t.Errorf("Expected status 400, got %d", resp.StatusCode)
+		if resp.StatusCode != 401 {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
 		}
 	})
 
@@ -271,8 +271,8 @@ func TestAuthenticationMiddleware(t *testing.T) {
 			t.Fatalf("Request failed: %v", err)
 		}
 
-		if resp.StatusCode != 400 {
-			t.Errorf("Expected status 400, got %d", resp.StatusCode)
+		if resp.StatusCode != 401 {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
 		}
 	})
 }
@@ -559,8 +559,8 @@ func TestAuthServiceFailure(t *testing.T) {
 			t.Fatalf("Request failed: %v", err)
 		}
 
-		if resp.StatusCode != 400 {
-			t.Errorf("Expected status 400, got %d", resp.StatusCode)
+		if resp.StatusCode != 401 {
+			t.Errorf("Expected status 401, got %d", resp.StatusCode)
 		}
 	})
 }

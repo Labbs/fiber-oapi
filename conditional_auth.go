@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -13,7 +14,7 @@ func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...str
 
 		// Verify if the current path is in the exclude list
 		for _, excludePath := range excludePaths {
-			if path == excludePath || strings.HasPrefix(path, excludePath) {
+			if excludePath != "" && (path == excludePath || strings.HasPrefix(path, excludePath)) {
 				return c.Next() // Skip authentication
 			}
 		}
@@ -23,9 +24,16 @@ func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...str
 	}
 }
 
-// SmartAuthMiddleware creates middleware that automatically excludes documentation routes
+// SmartAuthMiddleware creates middleware that automatically excludes documentation routes.
+// When SecuritySchemes are configured, it uses MultiSchemeAuthMiddleware for dispatch.
+// Otherwise, it falls back to BearerTokenMiddleware for backward compatibility.
 func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.Handler {
-	authMiddleware := BearerTokenMiddleware(authService)
+	var authMiddleware fiber.Handler
+	if len(config.SecuritySchemes) > 0 {
+		authMiddleware = MultiSchemeAuthMiddleware(authService, config)
+	} else {
+		authMiddleware = BearerTokenMiddleware(authService)
+	}
 
 	// Paths to exclude from authentication
 	excludePaths := []string{
@@ -35,4 +43,126 @@ func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.
 	}
 
 	return ConditionalAuthMiddleware(authMiddleware, excludePaths...)
+}
+
+// MultiSchemeAuthMiddleware creates middleware that tries configured security schemes.
+// It iterates over DefaultSecurity requirements (OR semantics) and validates
+// using the appropriate scheme handler.
+func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		securityReqs := config.DefaultSecurity
+		if len(securityReqs) == 0 {
+			securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
+		}
+
+		// Server configuration errors (5xx) short-circuit immediately since
+		// no alternative requirement can fix a misconfigured scheme.
+		var lastErr error
+		for _, requirement := range securityReqs {
+			authCtx, err := validateSecurityRequirement(c, requirement, config.SecuritySchemes, authService)
+			if err == nil {
+				c.Locals("auth", authCtx)
+				return c.Next()
+			}
+			var authErr *AuthError
+			if errors.As(err, &authErr) && authErr.StatusCode >= 500 {
+				return c.Status(authErr.StatusCode).JSON(fiber.Map{
+					"error":   "Server configuration error",
+					"details": authErr.Message,
+				})
+			}
+			lastErr = err
+		}
+
+		if lastErr == nil {
+			// No security requirements were configured — this is a server misconfiguration,
+			// not a client authentication failure.
+			return c.Status(500).JSON(fiber.Map{
+				"error":   "Server configuration error",
+				"details": "no security schemes configured",
+			})
+		}
+
+		status := 401
+		errorLabel := "Authentication failed"
+		var scopeErr *ScopeError
+		if errors.As(lastErr, &scopeErr) {
+			status = 403
+			errorLabel = "Authorization failed"
+		}
+
+		return c.Status(status).JSON(fiber.Map{
+			"error":   errorLabel,
+			"details": lastErr.Error(),
+		})
+	}
+}
+
+// BasicAuthMiddleware creates a standalone middleware for HTTP Basic authentication.
+// The authService must implement the BasicAuthValidator interface.
+func BasicAuthMiddleware(validator AuthorizationService) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		authCtx, err := validateBasicAuth(c, validator)
+		if err != nil {
+			status, label := classifyAuthError(err)
+			return c.Status(status).JSON(fiber.Map{
+				"error":   label,
+				"details": err.Error(),
+			})
+		}
+
+		c.Locals("auth", authCtx)
+		return c.Next()
+	}
+}
+
+// APIKeyMiddleware creates a standalone middleware for API Key authentication.
+// The authService must implement the APIKeyValidator interface.
+func APIKeyMiddleware(validator AuthorizationService, scheme SecurityScheme) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		authCtx, err := validateAPIKey(c, scheme, validator)
+		if err != nil {
+			status, label := classifyAuthError(err)
+			return c.Status(status).JSON(fiber.Map{
+				"error":   label,
+				"details": err.Error(),
+			})
+		}
+
+		c.Locals("auth", authCtx)
+		return c.Next()
+	}
+}
+
+// AWSSignatureMiddleware creates a standalone middleware for AWS Signature V4 authentication.
+// The authService must implement the AWSSignatureValidator interface.
+func AWSSignatureMiddleware(validator AuthorizationService) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		authCtx, err := validateAWSSigV4(c, validator)
+		if err != nil {
+			status, label := classifyAuthError(err)
+			return c.Status(status).JSON(fiber.Map{
+				"error":   label,
+				"details": err.Error(),
+			})
+		}
+
+		c.Locals("auth", authCtx)
+		return c.Next()
+	}
+}
+
+// classifyAuthError returns the HTTP status and error label for an authentication error.
+func classifyAuthError(err error) (int, string) {
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		if authErr.StatusCode >= 500 {
+			return authErr.StatusCode, "Server configuration error"
+		}
+		if authErr.StatusCode == 403 {
+			return authErr.StatusCode, "Authorization failed"
+		}
+		return authErr.StatusCode, "Authentication failed"
+	}
+	return 401, "Authentication failed"
 }

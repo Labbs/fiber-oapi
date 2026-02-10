@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -139,36 +140,67 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 	}
 }
 
-// validateAuthorization validates permissions based on tags
-func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService) error {
+// validateAuthorization validates permissions based on configured security schemes.
+// When SecuritySchemes is empty, it falls back to Bearer-only validation for backward compatibility.
+func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService, config *Config) error {
 	if authService == nil {
 		return nil
 	}
 
-	// Extract and validate the token directly
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return fmt.Errorf("authentication required")
+	// Backward compatibility: if no SecuritySchemes are configured,
+	// fall back to Bearer-only validation (original behavior).
+	if config == nil || len(config.SecuritySchemes) == 0 {
+		authCtx, err := validateBearerToken(c, authService)
+		if err != nil {
+			// Preserve typed AuthError (including 5xx) and map ScopeError to 403,
+			// falling back to 401 only for untyped errors.
+			var authErr *AuthError
+			if errors.As(err, &authErr) {
+				return err
+			}
+			var scopeErr *ScopeError
+			if errors.As(err, &scopeErr) {
+				return &AuthError{StatusCode: 403, Message: err.Error()}
+			}
+			return &AuthError{StatusCode: 401, Message: err.Error()}
+		}
+		c.Locals("auth", authCtx)
+		return validateResourceAccess(c, authCtx, input, authService)
 	}
 
-	// Check Bearer format
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return fmt.Errorf("invalid authorization header format")
+	// Multi-scheme validation path
+	securityReqs := config.DefaultSecurity
+	if len(securityReqs) == 0 {
+		securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
 	}
 
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// Validate the token
-	authCtx, err := authService.ValidateToken(token)
-	if err != nil {
-		return fmt.Errorf("invalid token: %v", err)
+	// Try each security requirement (OR semantics per OpenAPI spec).
+	// Server configuration errors (5xx) short-circuit immediately since
+	// no alternative requirement can fix a misconfigured scheme.
+	var lastErr error
+	for _, requirement := range securityReqs {
+		authCtx, err := validateSecurityRequirement(c, requirement, config.SecuritySchemes, authService)
+		if err == nil {
+			c.Locals("auth", authCtx)
+			return validateResourceAccess(c, authCtx, input, authService)
+		}
+		var authErr *AuthError
+		if errors.As(err, &authErr) && authErr.StatusCode >= 500 {
+			return err
+		}
+		lastErr = err
 	}
 
-	// Store auth context for later use
-	c.Locals("auth", authCtx)
-
-	// Analyze authorization tags in the struct
-	return validateResourceAccess(c, authCtx, input, authService)
+	// Propagate typed errors (AuthError, ScopeError) without re-wrapping
+	var existingAuthErr *AuthError
+	if errors.As(lastErr, &existingAuthErr) {
+		return lastErr
+	}
+	var scopeErr *ScopeError
+	if errors.As(lastErr, &scopeErr) {
+		return &AuthError{StatusCode: 403, Message: lastErr.Error()}
+	}
+	return &AuthError{StatusCode: 401, Message: lastErr.Error()}
 }
 
 // validateResourceAccess validates resource access based on tags
@@ -202,11 +234,11 @@ func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{
 
 				canAccess, err := authService.CanAccessResource(authCtx, resourceTag, resourceID, actionTag)
 				if err != nil {
-					return fmt.Errorf("authorization check failed: %w", err)
+					return &AuthError{StatusCode: 500, Message: fmt.Sprintf("authorization check failed: %v", err)}
 				}
 
 				if !canAccess {
-					return fmt.Errorf("insufficient permissions for %s %s on %s", actionTag, resourceTag, resourceID)
+					return &AuthError{StatusCode: 403, Message: fmt.Sprintf("insufficient permissions for %s %s on %s", actionTag, resourceTag, resourceID)}
 				}
 			}
 		}
