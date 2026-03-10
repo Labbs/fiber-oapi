@@ -40,13 +40,13 @@ type AuthorizationService interface {
 
 // SecurityScheme for OpenAPI
 type SecurityScheme struct {
-	Type         string                 `json:"type"`
-	Scheme       string                 `json:"scheme,omitempty"`
-	BearerFormat string                 `json:"bearerFormat,omitempty"`
-	In           string                 `json:"in,omitempty"`
-	Name         string                 `json:"name,omitempty"`
-	Description  string                 `json:"description,omitempty"`
-	Flows        map[string]interface{} `json:"flows,omitempty"`
+	Type         string                 `json:"type" yaml:"type"`
+	Scheme       string                 `json:"scheme,omitempty" yaml:"scheme,omitempty"`
+	BearerFormat string                 `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"`
+	In           string                 `json:"in,omitempty" yaml:"in,omitempty"`
+	Name         string                 `json:"name,omitempty" yaml:"name,omitempty"`
+	Description  string                 `json:"description,omitempty" yaml:"description,omitempty"`
+	Flows        map[string]interface{} `json:"flows,omitempty" yaml:"flows,omitempty"`
 }
 
 // GetAuthContext extracts the authentication context from Fiber
