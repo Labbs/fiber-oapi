@@ -142,7 +142,7 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 
 // validateAuthorization validates permissions based on configured security schemes.
 // When SecuritySchemes is empty, it falls back to Bearer-only validation for backward compatibility.
-func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService, config *Config, requiredRoles []string) error {
+func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService, config *Config, requiredRoles []string, requireAllRoles bool) error {
 	if authService == nil {
 		if len(requiredRoles) > 0 {
 			return &AuthError{StatusCode: 500, Message: "authorization service not configured"}
@@ -170,7 +170,7 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 		c.Locals("auth", authCtx)
 
 		// Check roles before resource access
-		if err := checkRequiredRoles(authCtx, authService, requiredRoles); err != nil {
+		if err := checkRequiredRoles(authCtx, authService, requiredRoles, requireAllRoles); err != nil {
 			return err
 		}
 		return validateResourceAccess(c, authCtx, input, authService)
@@ -192,7 +192,7 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 			c.Locals("auth", authCtx)
 
 			// Check roles before resource access
-			if err := checkRequiredRoles(authCtx, authService, requiredRoles); err != nil {
+			if err := checkRequiredRoles(authCtx, authService, requiredRoles, requireAllRoles); err != nil {
 				return err
 			}
 			return validateResourceAccess(c, authCtx, input, authService)
@@ -216,15 +216,27 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 	return &AuthError{StatusCode: 401, Message: lastErr.Error()}
 }
 
-// checkRequiredRoles checks that the authenticated user has all required roles.
-// Called inside validateAuthorization after auth context is established, before resource access checks.
-func checkRequiredRoles(authCtx *AuthContext, authService AuthorizationService, requiredRoles []string) error {
+// checkRequiredRoles checks the authenticated user's roles against the required roles.
+// By default (requireAll=false), the user needs at least one of the roles (OR semantics).
+// When requireAll=true, the user must have all listed roles (AND semantics).
+func checkRequiredRoles(authCtx *AuthContext, authService AuthorizationService, requiredRoles []string, requireAll bool) error {
+	if len(requiredRoles) == 0 {
+		return nil
+	}
+	if requireAll {
+		for _, role := range requiredRoles {
+			if !authService.HasRole(authCtx, role) {
+				return &AuthError{StatusCode: 403, Message: fmt.Sprintf("required role missing: %s", role)}
+			}
+		}
+		return nil
+	}
 	for _, role := range requiredRoles {
-		if !authService.HasRole(authCtx, role) {
-			return &AuthError{StatusCode: 403, Message: fmt.Sprintf("required role missing: %s", role)}
+		if authService.HasRole(authCtx, role) {
+			return nil
 		}
 	}
-	return nil
+	return &AuthError{StatusCode: 403, Message: fmt.Sprintf("requires one of: %s", strings.Join(requiredRoles, ", "))}
 }
 
 // validateResourceAccess validates resource access based on tags
