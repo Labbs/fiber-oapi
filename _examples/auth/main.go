@@ -240,6 +240,19 @@ func main() {
 		EnableOpenAPIDocs:   true,
 		EnableAuthorization: true,
 		AuthService:         authService,
+		// Custom error handler for authentication/authorization errors
+		AuthErrorHandler: func(c *fiber.Ctx, err *fiberoapi.AuthError) error {
+			errType := "authentication_error"
+			if err.StatusCode == 403 {
+				errType = "authorization_error"
+			}
+			return c.Status(err.StatusCode).JSON(fiber.Map{
+				"error":   errType,
+				"message": err.Message,
+				"status":  err.StatusCode,
+				"service": "fiber-oapi auth example",
+			})
+		},
 		SecuritySchemes: map[string]fiberoapi.SecurityScheme{
 			"bearerAuth": {
 				Type:         "http",

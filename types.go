@@ -57,6 +57,10 @@ type PathInfo struct {
 // It receives the fiber context and the validation error, and returns a fiber error response
 type ValidationErrorHandler func(c *fiber.Ctx, err error) error
 
+// AuthErrorHandler is a function type for handling authentication/authorization errors
+// It receives the fiber context and the AuthError, and returns a fiber error response
+type AuthErrorHandler func(c *fiber.Ctx, err *AuthError) error
+
 // Config represents configuration for the OApi wrapper
 type Config struct {
 	EnableValidation       bool                      // Enable request validation (default: true)
@@ -69,6 +73,7 @@ type Config struct {
 	SecuritySchemes        map[string]SecurityScheme // OpenAPI security schemes
 	DefaultSecurity        []map[string][]string     // Default security requirements
 	ValidationErrorHandler ValidationErrorHandler    // Custom handler for validation errors
+	AuthErrorHandler       AuthErrorHandler           // Custom handler for auth errors (401/403)
 }
 
 // OpenAPIOptions represents options for OpenAPI operations

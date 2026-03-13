@@ -692,6 +692,73 @@ func TestRequiredRoles(t *testing.T) {
 	})
 }
 
+// TestCustomAuthErrorHandler tests that a custom AuthErrorHandler overrides the default error response
+func TestCustomAuthErrorHandler(t *testing.T) {
+	mockAuth := NewMockAuthService()
+
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableOpenAPIDocs:   true,
+		EnableValidation:    true,
+		EnableAuthorization: true,
+		AuthService:         mockAuth,
+		SecuritySchemes: map[string]SecurityScheme{
+			"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+		},
+		DefaultSecurity: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+		AuthErrorHandler: func(c *fiber.Ctx, err *AuthError) error {
+			return c.Status(err.StatusCode).JSON(fiber.Map{
+				"custom":  true,
+				"message": err.Message,
+				"status":  err.StatusCode,
+			})
+		},
+	})
+
+	Get(oapi, "/protected", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, OpenAPIOptions{Summary: "Protected"})
+
+	t.Run("custom handler for 401", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/protected", nil)
+		// No auth header -> 401
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 401 {
+			t.Fatalf("Expected 401, got %d", resp.StatusCode)
+		}
+		var body map[string]any
+		json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if body["custom"] != true {
+			t.Error("Expected custom error handler to be invoked")
+		}
+	})
+
+	t.Run("custom handler for 403", func(t *testing.T) {
+		Get(oapi, "/admin-only", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+			return fiber.Map{"ok": true}, nil
+		}, WithRoles(OpenAPIOptions{Summary: "Admin only"}, "admin"))
+
+		req := httptest.NewRequest("GET", "/admin-only", nil)
+		req.Header.Set("Authorization", "Bearer valid-token") // has "user" role, not "admin"
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 403 {
+			t.Fatalf("Expected 403, got %d", resp.StatusCode)
+		}
+		var body map[string]any
+		json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if body["custom"] != true {
+			t.Error("Expected custom error handler to be invoked for 403")
+		}
+		if body["status"] != float64(403) {
+			t.Errorf("Expected status 403 in body, got %v", body["status"])
+		}
+	})
+}
+
 // TestWithRolesHelper tests the WithRoles helper function
 func TestWithRolesHelper(t *testing.T) {
 	opts := WithRoles(OpenAPIOptions{Summary: "test"}, "admin", "editor")
