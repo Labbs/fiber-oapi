@@ -123,16 +123,9 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 			if routeSecurity, ok := options.Security.([]map[string][]string); ok && len(routeSecurity) > 0 {
 				cfg.DefaultSecurity = routeSecurity
 			}
-			err = validateAuthorization(c, input, cfg.AuthService, &cfg)
+			err = validateAuthorization(c, input, cfg.AuthService, &cfg, options.RequiredRoles)
 			if err != nil {
 				return input, err
-			}
-
-			// Validate required roles if specified on the route
-			if len(options.RequiredRoles) > 0 {
-				if err := validateRequiredRoles(c, cfg.AuthService, options.RequiredRoles); err != nil {
-					return input, err
-				}
 			}
 		}
 	}
