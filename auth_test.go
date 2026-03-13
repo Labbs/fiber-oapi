@@ -593,6 +593,11 @@ func TestRequiredRoles(t *testing.T) {
 		return fiber.Map{"ok": true}, nil
 	}, WithRoles(OpenAPIOptions{Summary: "User profile"}, "user"))
 
+	// Route requiring multiple roles (AND semantics): "admin" AND "user"
+	Get(oapi, "/admin/settings", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, WithRoles(OpenAPIOptions{Summary: "Admin settings"}, "admin", "user"))
+
 	// Route with no required roles
 	Get(oapi, "/public/info", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
@@ -662,6 +667,27 @@ func TestRequiredRoles(t *testing.T) {
 		}
 		if len(roles) != 1 || roles[0] != "admin" {
 			t.Errorf("Expected [admin], got %v", roles)
+		}
+	})
+
+	// Multi-role AND semantics tests
+	// admin-token has roles ["admin", "user"] -> should pass
+	t.Run("multi-role: token with all roles accepted", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/settings", nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	// valid-token has roles ["user"] -> missing "admin", should be rejected
+	t.Run("multi-role: token missing one role rejected", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/settings", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 403 {
+			t.Errorf("Expected 403, got %d", resp.StatusCode)
 		}
 	})
 }
