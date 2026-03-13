@@ -52,8 +52,8 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		// If no explicit config, keep the defaults (true, true, false)
 
-		// Special case: if only handler(s) are set and boolean fields seem to be using zero values,
-		// restore defaults since it makes no sense to have error handlers without validation/docs
+		// Heuristic: when only handler(s) are provided and all booleans are at zero value,
+		// assume the caller didn't intend to disable validation/docs — restore defaults.
 		otherExplicitConfig := provided.EnableAuthorization ||
 			provided.AuthService != nil ||
 			provided.SecuritySchemes != nil ||
