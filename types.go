@@ -79,6 +79,7 @@ type OpenAPIOptions struct {
 	Description         string                   `json:"description,omitempty"`
 	Parameters          []map[string]interface{} `json:"parameters,omitempty"`
 	Security            interface{}              `json:"security,omitempty"` // Can be []map[string][]string or "disabled"
+	RequiredRoles       []string                 `json:"-"`                  // Roles required to access this route (checked automatically)
 	RequiredPermissions []string                 `json:"-"`                  // Ex: ["document:read", "workspace:admin"]
 	ResourceType        string                   `json:"-"`                  // Type de ressource concernée
 }
