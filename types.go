@@ -73,7 +73,7 @@ type Config struct {
 	SecuritySchemes        map[string]SecurityScheme // OpenAPI security schemes
 	DefaultSecurity        []map[string][]string     // Default security requirements
 	ValidationErrorHandler ValidationErrorHandler    // Custom handler for validation errors
-	AuthErrorHandler       AuthErrorHandler           // Custom handler for auth errors (401/403)
+	AuthErrorHandler       AuthErrorHandler          // Custom handler for auth errors (401/403/5xx)
 }
 
 // OpenAPIOptions represents options for OpenAPI operations
