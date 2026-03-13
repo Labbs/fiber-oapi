@@ -42,7 +42,8 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.OpenAPIDocsPath != "" ||
 			provided.OpenAPIJSONPath != "" ||
 			provided.OpenAPIYamlPath != "" ||
-			provided.ValidationErrorHandler != nil
+			provided.ValidationErrorHandler != nil ||
+			provided.AuthErrorHandler != nil
 
 		// Only override boolean defaults if the config appears to be explicitly set
 		if hasExplicitConfig {
@@ -95,6 +96,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		if provided.ValidationErrorHandler != nil {
 			cfg.ValidationErrorHandler = provided.ValidationErrorHandler
+		}
+		if provided.AuthErrorHandler != nil {
+			cfg.AuthErrorHandler = provided.AuthErrorHandler
 		}
 	}
 
@@ -860,6 +864,9 @@ func Method[TInput any, TOutput any, TError any](
 			// Check for authentication/authorization errors first
 			var authErr *AuthError
 			if errors.As(err, &authErr) {
+				if app.config.AuthErrorHandler != nil {
+					return app.config.AuthErrorHandler(c, authErr)
+				}
 				errType := "authentication_error"
 				if authErr.StatusCode == 403 {
 					errType = "authorization_error"
