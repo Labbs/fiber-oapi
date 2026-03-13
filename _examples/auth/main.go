@@ -375,7 +375,7 @@ func main() {
 			RequiredPermissions: []string{"document:write"},
 		})
 
-	// Route pour partager (éditeurs et admins)
+	// Route pour partager (éditeurs seulement)
 	fiberoapi.Post(oapi, "/documents/:documentId/share",
 		func(c *fiber.Ctx, input DocumentRequest) (DocumentShareResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
