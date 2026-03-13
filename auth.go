@@ -216,15 +216,18 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 	return &AuthError{StatusCode: 401, Message: lastErr.Error()}
 }
 
-// checkRequiredRoles checks that the authenticated user has all required roles.
+// checkRequiredRoles checks that the authenticated user has at least one of the required roles (OR semantics).
 // Called inside validateAuthorization after auth context is established, before resource access checks.
 func checkRequiredRoles(authCtx *AuthContext, authService AuthorizationService, requiredRoles []string) error {
+	if len(requiredRoles) == 0 {
+		return nil
+	}
 	for _, role := range requiredRoles {
-		if !authService.HasRole(authCtx, role) {
-			return &AuthError{StatusCode: 403, Message: fmt.Sprintf("required role missing: %s", role)}
+		if authService.HasRole(authCtx, role) {
+			return nil
 		}
 	}
-	return nil
+	return &AuthError{StatusCode: 403, Message: fmt.Sprintf("none of the required roles found: %v", requiredRoles)}
 }
 
 // validateResourceAccess validates resource access based on tags
