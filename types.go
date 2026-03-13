@@ -73,15 +73,15 @@ type Config struct {
 
 // OpenAPIOptions represents options for OpenAPI operations
 type OpenAPIOptions struct {
-	OperationID         string                   `json:"operationId,omitempty"`
-	Tags                []string                 `json:"tags,omitempty"`
-	Summary             string                   `json:"summary,omitempty"`
-	Description         string                   `json:"description,omitempty"`
-	Parameters          []map[string]interface{} `json:"parameters,omitempty"`
-	Security            interface{}              `json:"security,omitempty"` // Can be []map[string][]string or "disabled"
-	RequiredRoles       []string                 `json:"-"`                  // Roles required to access this route (checked automatically)
-	RequiredPermissions []string                 `json:"-"`                  // Ex: ["document:read", "workspace:admin"]
-	ResourceType        string                   `json:"-"`                  // Type de ressource concernée
+	OperationID         string           `json:"operationId,omitempty"`
+	Tags                []string         `json:"tags,omitempty"`
+	Summary             string           `json:"summary,omitempty"`
+	Description         string           `json:"description,omitempty"`
+	Parameters          []map[string]any `json:"parameters,omitempty"`
+	Security            any              `json:"security,omitempty"` // Can be []map[string][]string or "disabled"
+	RequiredRoles       []string         `json:"-"`                  // Roles required to access this route (checked automatically)
+	RequiredPermissions []string         `json:"-"`                  // Ex: ["document:read", "workspace:admin"]
+	ResourceType        string           `json:"-"`                  // Type de ressource concernée
 }
 
 // OpenAPIOperation represents a registered operation
@@ -95,22 +95,22 @@ type OpenAPIOperation struct {
 }
 
 type OpenAPIParameter struct {
-	Name        string                 `json:"name"`
-	In          string                 `json:"in"` // "path", "query", "header", "cookie"
-	Required    bool                   `json:"required,omitempty"`
-	Description string                 `json:"description,omitempty"`
-	Schema      map[string]interface{} `json:"schema"`
+	Name        string         `json:"name"`
+	In          string         `json:"in"` // "path", "query", "header", "cookie"
+	Required    bool           `json:"required,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Schema      map[string]any `json:"schema"`
 }
 
 type OpenAPIResponse struct {
-	Description string                 `json:"description"`
-	Content     map[string]interface{} `json:"content,omitempty"`
+	Description string         `json:"description"`
+	Content     map[string]any `json:"content,omitempty"`
 }
 
 type OpenAPIRequestBody struct {
-	Description string                 `json:"description,omitempty"`
-	Required    bool                   `json:"required,omitempty"`
-	Content     map[string]interface{} `json:"content"`
+	Description string         `json:"description,omitempty"`
+	Required    bool           `json:"required,omitempty"`
+	Content     map[string]any `json:"content"`
 }
 
 type ErrorResponse struct {
