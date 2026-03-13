@@ -329,29 +329,14 @@ func main() {
 			Tags:        []string{"user", "status"},
 		})
 
-	// ====== ROUTES AVEC CONTRÔLE DE RÔLES ======
+	// ====== ROUTES AVEC CONTRÔLE DE RÔLES (déclaratif via RequiredRoles) ======
 
 	// Route pour les utilisateurs (rôle minimum)
+	// RequiredRoles: vérifié automatiquement avant le handler
+	// RequiredPermissions: documenté dans la spec OpenAPI
 	fiberoapi.Get(oapi, "/documents/:documentId",
 		func(c *fiber.Ctx, input DocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
-
-			// Vérification manuelle des rôles et scopes
-			if !authService.HasRole(authCtx, "user") {
-				return DocumentResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'user' role",
-					Type:    "authorization_error",
-				}
-			}
-			if !authService.HasScope(authCtx, "read") {
-				return DocumentResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'read' scope",
-					Type:    "authorization_error",
-				}
-			}
-
 			fmt.Printf("📖 User %s (roles: %v) accessing document %s\n", authCtx.UserID, authCtx.Roles, input.DocumentID)
 
 			return DocumentResponse{
@@ -362,32 +347,17 @@ func main() {
 			}, nil
 		},
 		fiberoapi.OpenAPIOptions{
-			Summary:     "Get document",
-			Description: "Récupère un document. Nécessite le rôle 'user' et scope 'read'",
-			Tags:        []string{"documents"},
+			Summary:             "Get document",
+			Description:         "Récupère un document. Nécessite le rôle 'user'",
+			Tags:                []string{"documents"},
+			RequiredRoles:       []string{"user"},
+			RequiredPermissions: []string{"document:read"},
 		})
 
 	// Route pour les éditeurs (peuvent modifier)
 	fiberoapi.Put(oapi, "/documents/:documentId",
 		func(c *fiber.Ctx, input UpdateDocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
-
-			// Vérification manuelle des rôles et scopes
-			if !authService.HasRole(authCtx, "user") {
-				return DocumentResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'user' role",
-					Type:    "authorization_error",
-				}
-			}
-			if !authService.HasScope(authCtx, "write") {
-				return DocumentResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'write' scope",
-					Type:    "authorization_error",
-				}
-			}
-
 			fmt.Printf("✏️  User %s (scopes: %v) updating document %s\n", authCtx.UserID, authCtx.Scopes, input.DocumentID)
 
 			return DocumentResponse{
@@ -398,25 +368,17 @@ func main() {
 			}, nil
 		},
 		fiberoapi.OpenAPIOptions{
-			Summary:     "Update document",
-			Description: "Met à jour un document. Nécessite le rôle 'user' et scope 'write'",
-			Tags:        []string{"documents"},
+			Summary:             "Update document",
+			Description:         "Met à jour un document. Nécessite le rôle 'editor'",
+			Tags:                []string{"documents"},
+			RequiredRoles:       []string{"editor"},
+			RequiredPermissions: []string{"document:write"},
 		})
 
-	// Route pour partager (éditeurs et admins)
+	// Route pour partager (éditeurs seulement)
 	fiberoapi.Post(oapi, "/documents/:documentId/share",
 		func(c *fiber.Ctx, input DocumentRequest) (DocumentShareResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
-
-			// Vérification du scope share
-			if !authService.HasScope(authCtx, "share") {
-				return DocumentShareResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'share' scope",
-					Type:    "authorization_error",
-				}
-			}
-
 			fmt.Printf("🔗 User %s sharing document %s\n", authCtx.UserID, input.DocumentID)
 
 			return DocumentShareResponse{
@@ -424,32 +386,17 @@ func main() {
 			}, nil
 		},
 		fiberoapi.OpenAPIOptions{
-			Summary:     "Share document",
-			Description: "Partage un document. Nécessite le scope 'share'",
-			Tags:        []string{"documents", "sharing"},
+			Summary:             "Share document",
+			Description:         "Partage un document. Nécessite le rôle 'editor'",
+			Tags:                []string{"documents", "sharing"},
+			RequiredRoles:       []string{"editor"},
+			RequiredPermissions: []string{"document:share"},
 		})
 
 	// Route réservée aux administrateurs
 	fiberoapi.Delete(oapi, "/documents/:documentId",
 		func(c *fiber.Ctx, input DocumentRequest) (DocumentDeleteResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
-
-			// Vérification du rôle admin et scope delete
-			if !authService.HasRole(authCtx, "admin") {
-				return DocumentDeleteResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'admin' role",
-					Type:    "authorization_error",
-				}
-			}
-			if !authService.HasScope(authCtx, "delete") {
-				return DocumentDeleteResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'delete' scope",
-					Type:    "authorization_error",
-				}
-			}
-
 			fmt.Printf("🗑️  Admin %s deleting document %s\n", authCtx.UserID, input.DocumentID)
 
 			return DocumentDeleteResponse{
@@ -457,32 +404,17 @@ func main() {
 			}, nil
 		},
 		fiberoapi.OpenAPIOptions{
-			Summary:     "Delete document",
-			Description: "Supprime un document. Réservé aux administrateurs",
-			Tags:        []string{"documents", "admin"},
+			Summary:             "Delete document",
+			Description:         "Supprime un document. Réservé aux administrateurs",
+			Tags:                []string{"documents", "admin"},
+			RequiredRoles:       []string{"admin"},
+			RequiredPermissions: []string{"document:delete"},
 		})
 
 	// Route de création d'utilisateur (admin seulement)
 	fiberoapi.Post(oapi, "/users",
 		func(c *fiber.Ctx, input CreateUserRequest) (CreateUserResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
-
-			// Vérification du rôle admin et scope write
-			if !authService.HasRole(authCtx, "admin") {
-				return CreateUserResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'admin' role",
-					Type:    "authorization_error",
-				}
-			}
-			if !authService.HasScope(authCtx, "write") {
-				return CreateUserResponse{}, &fiberoapi.ErrorResponse{
-					Code:    403,
-					Details: "Access denied: requires 'write' scope",
-					Type:    "authorization_error",
-				}
-			}
-
 			fmt.Printf("👤 Admin %s creating user: %s\n", authCtx.UserID, input.Name)
 
 			return CreateUserResponse{
@@ -492,9 +424,11 @@ func main() {
 			}, nil
 		},
 		fiberoapi.OpenAPIOptions{
-			Summary:     "Create user",
-			Description: "Crée un nouvel utilisateur. Réservé aux administrateurs",
-			Tags:        []string{"users", "admin"},
+			Summary:             "Create user",
+			Description:         "Crée un nouvel utilisateur. Réservé aux administrateurs",
+			Tags:                []string{"users", "admin"},
+			RequiredRoles:       []string{"admin"},
+			RequiredPermissions: []string{"user:create"},
 		})
 
 	fmt.Println("🚀 Serveur avec authentification et rôles démarré sur port 3002")

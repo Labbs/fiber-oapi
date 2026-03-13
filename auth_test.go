@@ -564,3 +564,147 @@ func TestAuthServiceFailure(t *testing.T) {
 		}
 	})
 }
+
+// TestRequiredRoles tests the declarative role checking via OpenAPIOptions.RequiredRoles
+func TestRequiredRoles(t *testing.T) {
+	mockAuth := NewMockAuthService()
+
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableOpenAPIDocs:   true,
+		EnableValidation:    true,
+		EnableAuthorization: true,
+		AuthService:         mockAuth,
+		SecuritySchemes: map[string]SecurityScheme{
+			"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+		},
+		DefaultSecurity: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	})
+
+	// Route requiring "admin" role
+	Get(oapi, "/admin/users", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, WithRoles(OpenAPIOptions{Summary: "Admin only"}, "admin"))
+
+	// Route requiring "user" role (both tokens have this)
+	Get(oapi, "/user/profile", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, WithRoles(OpenAPIOptions{Summary: "User profile"}, "user"))
+
+	// Route requiring multiple roles (AND semantics): "admin" AND "user"
+	Get(oapi, "/admin/settings", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, WithRoles(OpenAPIOptions{Summary: "Admin settings"}, "admin", "user"))
+
+	// Route with no required roles
+	Get(oapi, "/public/info", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, OpenAPIOptions{Summary: "Public info"})
+
+	t.Run("admin token accesses admin route", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/users", nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("user token rejected from admin route", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/users", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 403 {
+			t.Errorf("Expected 403, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("user token accesses user route", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/user/profile", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("admin token accesses user route", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/user/profile", nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("no token rejected from role-protected route", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/users", nil)
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 401 {
+			t.Errorf("Expected 401, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("no roles required still needs auth", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/public/info", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("x-required-roles in OpenAPI spec", func(t *testing.T) {
+		spec := oapi.GenerateOpenAPISpec()
+		paths := spec["paths"].(map[string]interface{})
+		adminPath := paths["/admin/users"].(map[string]interface{})
+		getOp := adminPath["get"].(map[string]interface{})
+		roles, ok := getOp["x-required-roles"].([]string)
+		if !ok {
+			t.Fatal("Expected x-required-roles in spec")
+		}
+		if len(roles) != 1 || roles[0] != "admin" {
+			t.Errorf("Expected [admin], got %v", roles)
+		}
+	})
+
+	// Multi-role AND semantics tests
+	// admin-token has roles ["admin", "user"] -> should pass
+	t.Run("multi-role: token with all roles accepted", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/settings", nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	// valid-token has roles ["user"] -> missing "admin", should be rejected
+	t.Run("multi-role: token missing one role rejected", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/settings", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 403 {
+			t.Errorf("Expected 403, got %d", resp.StatusCode)
+		}
+	})
+}
+
+// TestWithRolesHelper tests the WithRoles helper function
+func TestWithRolesHelper(t *testing.T) {
+	opts := WithRoles(OpenAPIOptions{Summary: "test"}, "admin", "editor")
+	if len(opts.RequiredRoles) != 2 {
+		t.Fatalf("Expected 2 roles, got %d", len(opts.RequiredRoles))
+	}
+	if opts.RequiredRoles[0] != "admin" || opts.RequiredRoles[1] != "editor" {
+		t.Errorf("Expected [admin, editor], got %v", opts.RequiredRoles)
+	}
+
+	// Chaining
+	opts = WithRoles(opts, "superadmin")
+	if len(opts.RequiredRoles) != 3 {
+		t.Fatalf("Expected 3 roles after chaining, got %d", len(opts.RequiredRoles))
+	}
+}

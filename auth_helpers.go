@@ -12,6 +12,12 @@ func WithSecurityDisabled(options OpenAPIOptions) OpenAPIOptions {
 	return options
 }
 
+// WithRoles adds required roles to a route (checked automatically during auth)
+func WithRoles(options OpenAPIOptions, roles ...string) OpenAPIOptions {
+	options.RequiredRoles = append(options.RequiredRoles, roles...)
+	return options
+}
+
 // WithPermissions adds required permissions for documentation
 func WithPermissions(options OpenAPIOptions, permissions ...string) OpenAPIOptions {
 	options.RequiredPermissions = append(options.RequiredPermissions, permissions...)
