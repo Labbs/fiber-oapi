@@ -38,6 +38,15 @@ func NewMockAuthService() *MockAuthService {
 					"exp": time.Now().Add(time.Hour).Unix(),
 				},
 			},
+			"editor-token": {
+				UserID: "editor-321",
+				Roles:  []string{"editor", "user"},
+				Scopes: []string{"read", "write", "share"},
+				Claims: map[string]interface{}{
+					"sub": "editor-321",
+					"exp": time.Now().Add(time.Hour).Unix(),
+				},
+			},
 			"readonly-token": {
 				UserID: "readonly-789",
 				Roles:  []string{"user"},
@@ -668,6 +677,21 @@ func TestRequiredRoles(t *testing.T) {
 		if len(roles) != 1 || roles[0] != "admin" {
 			t.Errorf("Expected [admin], got %v", roles)
 		}
+		mode, ok := getOp["x-required-roles-mode"].(string)
+		if !ok {
+			t.Fatal("Expected x-required-roles-mode in spec")
+		}
+		if mode != "any" {
+			t.Errorf("Expected mode 'any', got %s", mode)
+		}
+
+		// Check OR route has mode "any"
+		settingsPath := paths["/admin/settings"].(map[string]interface{})
+		settingsOp := settingsPath["get"].(map[string]interface{})
+		settingsMode := settingsOp["x-required-roles-mode"].(string)
+		if settingsMode != "any" {
+			t.Errorf("Expected mode 'any' for /admin/settings, got %s", settingsMode)
+		}
 	})
 
 	// Multi-role OR semantics tests
@@ -675,6 +699,16 @@ func TestRequiredRoles(t *testing.T) {
 	t.Run("multi-role: token with one matching role accepted", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/admin/settings", nil)
 		req.Header.Set("Authorization", "Bearer admin-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	// editor-token has roles ["editor", "user"] -> has "editor" (second in RequiredRoles), should pass
+	t.Run("multi-role: token matching second role accepted", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/admin/settings", nil)
+		req.Header.Set("Authorization", "Bearer editor-token")
 		resp, _ := app.Test(req)
 		if resp.StatusCode != 200 {
 			t.Errorf("Expected 200, got %d", resp.StatusCode)
@@ -768,10 +802,82 @@ func TestWithRolesHelper(t *testing.T) {
 	if opts.RequiredRoles[0] != "admin" || opts.RequiredRoles[1] != "editor" {
 		t.Errorf("Expected [admin, editor], got %v", opts.RequiredRoles)
 	}
+	if opts.RequireAllRoles {
+		t.Error("WithRoles should not set RequireAllRoles")
+	}
 
 	// Chaining
 	opts = WithRoles(opts, "superadmin")
 	if len(opts.RequiredRoles) != 3 {
 		t.Fatalf("Expected 3 roles after chaining, got %d", len(opts.RequiredRoles))
 	}
+}
+
+// TestWithAllRolesHelper tests the WithAllRoles helper function
+func TestWithAllRolesHelper(t *testing.T) {
+	opts := WithAllRoles(OpenAPIOptions{Summary: "test"}, "admin", "editor")
+	if len(opts.RequiredRoles) != 2 {
+		t.Fatalf("Expected 2 roles, got %d", len(opts.RequiredRoles))
+	}
+	if !opts.RequireAllRoles {
+		t.Error("WithAllRoles should set RequireAllRoles to true")
+	}
+}
+
+// TestRequiredRoles_ANDSemantics tests RequireAllRoles=true (AND semantics)
+func TestRequiredRoles_ANDSemantics(t *testing.T) {
+	mockAuth := NewMockAuthService()
+
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableOpenAPIDocs:   true,
+		EnableValidation:    true,
+		EnableAuthorization: true,
+		AuthService:         mockAuth,
+		SecuritySchemes: map[string]SecurityScheme{
+			"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+		},
+		DefaultSecurity: []map[string][]string{
+			{"bearerAuth": {}},
+		},
+	})
+
+	// Route requiring ALL of "admin" AND "user" (AND semantics)
+	Get(oapi, "/strict", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		return fiber.Map{"ok": true}, nil
+	}, WithAllRoles(OpenAPIOptions{Summary: "Strict route"}, "admin", "user"))
+
+	// admin-token has roles ["admin", "user"] -> has both, should pass
+	t.Run("token with all roles accepted", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/strict", nil)
+		req.Header.Set("Authorization", "Bearer admin-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 200 {
+			t.Errorf("Expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	// valid-token has roles ["user"] -> missing "admin", should be rejected
+	t.Run("token missing one role rejected", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/strict", nil)
+		req.Header.Set("Authorization", "Bearer valid-token")
+		resp, _ := app.Test(req)
+		if resp.StatusCode != 403 {
+			t.Errorf("Expected 403, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("x-required-roles-mode is 'all' in OpenAPI spec", func(t *testing.T) {
+		spec := oapi.GenerateOpenAPISpec()
+		paths := spec["paths"].(map[string]interface{})
+		strictPath := paths["/strict"].(map[string]interface{})
+		getOp := strictPath["get"].(map[string]interface{})
+		mode, ok := getOp["x-required-roles-mode"].(string)
+		if !ok {
+			t.Fatal("Expected x-required-roles-mode in spec")
+		}
+		if mode != "all" {
+			t.Errorf("Expected mode 'all', got %s", mode)
+		}
+	})
 }
