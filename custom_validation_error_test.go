@@ -255,3 +255,44 @@ func TestValidationErrorHandlerImpliesValidationEnabled(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, fiber.StatusOK, resp.StatusCode, "OpenAPI docs should be enabled by default when only ValidationErrorHandler is configured")
 }
+
+// TestAuthErrorHandlerOnlyDoesNotDisableDefaults verifies that setting only AuthErrorHandler
+// does not accidentally disable EnableValidation or EnableOpenAPIDocs (both default to true).
+func TestAuthErrorHandlerOnlyDoesNotDisableDefaults(t *testing.T) {
+	app := fiber.New()
+
+	oapi := New(app, Config{
+		AuthErrorHandler: func(c *fiber.Ctx, err *AuthError) error {
+			return c.Status(err.StatusCode).JSON(fiber.Map{"custom": true})
+		},
+	})
+
+	type TestInput struct {
+		Name string `json:"name" validate:"required"`
+	}
+	type TestOutput struct {
+		Message string `json:"message"`
+	}
+
+	Post[TestInput, TestOutput, struct{}](
+		oapi,
+		"/test",
+		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+			return TestOutput{Message: "ok"}, struct{}{}
+		},
+		OpenAPIOptions{},
+	)
+
+	// Validation should still be enabled (default true)
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode, "Validation should be enabled when only AuthErrorHandler is configured")
+
+	// OpenAPI docs should still be enabled (default true)
+	req = httptest.NewRequest("GET", "/docs", nil)
+	resp, err = app.Test(req)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusOK, resp.StatusCode, "OpenAPI docs should be enabled when only AuthErrorHandler is configured")
+}
