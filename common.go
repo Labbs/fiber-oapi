@@ -127,6 +127,13 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 			if err != nil {
 				return input, err
 			}
+
+			// Validate required roles if specified on the route
+			if len(options.RequiredRoles) > 0 {
+				if err := validateRequiredRoles(c, cfg.AuthService, options.RequiredRoles); err != nil {
+					return input, err
+				}
+			}
 		}
 	}
 
