@@ -52,8 +52,8 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		// If no explicit config, keep the defaults (true, true, false)
 
-		// Special case: if ValidationErrorHandler is set and boolean fields seem to be using zero values,
-		// restore defaults since it makes no sense to have a validation error handler without validation
+		// Special case: if only handler(s) are set and boolean fields seem to be using zero values,
+		// restore defaults since it makes no sense to have error handlers without validation/docs
 		otherExplicitConfig := provided.EnableAuthorization ||
 			provided.AuthService != nil ||
 			provided.SecuritySchemes != nil ||
@@ -63,9 +63,10 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 
 		// Only restore defaults if ALL boolean fields are false (suggesting they weren't explicitly set)
 		allBooleansAreFalse := !provided.EnableValidation && !provided.EnableOpenAPIDocs && !provided.EnableAuthorization
+		hasOnlyHandlers := (provided.ValidationErrorHandler != nil || provided.AuthErrorHandler != nil) && !otherExplicitConfig
 
-		if provided.ValidationErrorHandler != nil && !otherExplicitConfig && allBooleansAreFalse {
-			// ValidationErrorHandler is the only explicit config, so restore defaults for boolean fields
+		if hasOnlyHandlers && allBooleansAreFalse {
+			// Only handler(s) are set, so restore defaults for boolean fields
 			cfg.EnableValidation = true   // Keep validation enabled - the handler needs it
 			cfg.EnableOpenAPIDocs = true  // Keep docs enabled - default behavior
 		}
