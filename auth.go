@@ -203,6 +203,22 @@ func validateAuthorization(c *fiber.Ctx, input interface{}, authService Authoriz
 	return &AuthError{StatusCode: 401, Message: lastErr.Error()}
 }
 
+// validateRequiredRoles checks that the authenticated user has all required roles
+func validateRequiredRoles(c *fiber.Ctx, authService AuthorizationService, requiredRoles []string) error {
+	authCtx, err := GetAuthContext(c)
+	if err != nil {
+		return &AuthError{StatusCode: 401, Message: "authentication required"}
+	}
+
+	for _, role := range requiredRoles {
+		if !authService.HasRole(authCtx, role) {
+			return &AuthError{StatusCode: 403, Message: fmt.Sprintf("required role missing: %s", role)}
+		}
+	}
+
+	return nil
+}
+
 // validateResourceAccess validates resource access based on tags
 func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{}, authService AuthorizationService) error {
 	inputValue := reflect.ValueOf(input)
