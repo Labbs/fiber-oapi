@@ -251,6 +251,11 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			}
 		}
 
+		// Add required roles as OpenAPI extension
+		if len(op.Options.RequiredRoles) > 0 {
+			enhancedOptions["x-required-roles"] = op.Options.RequiredRoles
+		}
+
 		// Add descriptions for required permissions
 		if len(op.Options.RequiredPermissions) > 0 {
 			desc := ""
