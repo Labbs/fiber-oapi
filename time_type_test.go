@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,6 +118,41 @@ func TestPointerTimeTypeRendersAsDateTimeString(t *testing.T) {
 	}
 	if startedAt["type"] != "string" || startedAt["format"] != "date-time" {
 		t.Errorf("Expected *time.Time to render as string/date-time, got %v", startedAt)
+	}
+}
+
+func TestTimeTypeAsTopLevelHandlerRuntime(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableValidation:  false,
+		EnableOpenAPIDocs: true,
+		OpenAPIDocsPath:   "/docs",
+	})
+
+	Post(oapi, "/timestamp", func(c *fiber.Ctx, req time.Time) (time.Time, *ErrorResponse) {
+		return req, nil
+	}, OpenAPIOptions{OperationID: "echoTimestamp"})
+
+	body := strings.NewReader(`"2024-01-15T10:30:00Z"`)
+	req := httptest.NewRequest("POST", "/timestamp", body)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Expected status 200, got %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var got time.Time
+	if err := json.Unmarshal(respBody, &got); err != nil {
+		t.Fatalf("Expected response to be a JSON time string, got %s (err: %v)", string(respBody), err)
+	}
+	want, _ := time.Parse(time.RFC3339, "2024-01-15T10:30:00Z")
+	if !got.Equal(want) {
+		t.Errorf("Expected echoed time %v, got %v", want, got)
 	}
 }
 
