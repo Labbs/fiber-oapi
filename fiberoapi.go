@@ -375,6 +375,11 @@ func collectAllTypes(t reflect.Type, collected map[string]reflect.Type) {
 	// Handle pointers
 	t = dereferenceType(t)
 
+	// time.Time is rendered inline as a date-time string, not as a component schema
+	if isTimeType(t) {
+		return
+	}
+
 	typeName := getTypeName(t)
 	if typeName == "" {
 		return
@@ -571,6 +576,11 @@ func getSimpleTypeName(t reflect.Type) string {
 	}
 }
 
+// isTimeType reports whether t is the standard library time.Time type.
+func isTimeType(t reflect.Type) bool {
+	return t != nil && t.Kind() == reflect.Struct && t.Name() == "Time" && t.PkgPath() == "time"
+}
+
 // generateSchema generates an OpenAPI schema from a Go type
 func generateSchema(t reflect.Type) map[string]interface{} {
 	if t == nil {
@@ -581,6 +591,14 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 
 	// Handle pointers
 	t = dereferenceType(t)
+
+	if isTimeType(t) {
+		return map[string]interface{}{
+			"type":    "string",
+			"format":  "date-time",
+			"example": "2006-01-02T15:04:05Z",
+		}
+	}
 
 	schema := make(map[string]interface{})
 
@@ -706,6 +724,13 @@ func generateFieldSchema(t reflect.Type) map[string]interface{} {
 
 	// Handle pointers
 	t = dereferenceType(t)
+
+	if isTimeType(t) {
+		schema["type"] = "string"
+		schema["format"] = "date-time"
+		schema["example"] = "2006-01-02T15:04:05Z"
+		return schema
+	}
 
 	switch t.Kind() {
 	case reflect.String:
