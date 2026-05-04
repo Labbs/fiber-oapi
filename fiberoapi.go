@@ -283,8 +283,9 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 				var schemaRef map[string]interface{}
 
-				// For map types, use inline schema instead of reference
-				if inputType.Kind() == reflect.Map {
+				// Inline schemas for types that are not registered as components
+				// (maps are always inline; time.Time is rendered as a date-time string)
+				if inputType.Kind() == reflect.Map || isTimeType(inputType) {
 					schemaRef = generateSchema(inputType)
 				} else {
 					inputSchemaName := getTypeName(inputType)
@@ -313,8 +314,9 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 			var schemaRef map[string]interface{}
 
-			// For map types, use inline schema instead of reference
-			if outputType.Kind() == reflect.Map {
+			// Inline schemas for types that are not registered as components
+			// (maps are always inline; time.Time is rendered as a date-time string)
+			if outputType.Kind() == reflect.Map || isTimeType(outputType) {
 				schemaRef = generateSchema(outputType)
 			} else {
 				outputSchemaName := getTypeName(outputType)

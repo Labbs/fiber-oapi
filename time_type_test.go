@@ -119,3 +119,56 @@ func TestPointerTimeTypeRendersAsDateTimeString(t *testing.T) {
 		t.Errorf("Expected *time.Time to render as string/date-time, got %v", startedAt)
 	}
 }
+
+func TestTimeTypeAsTopLevelInputAndOutput(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/timestamp", func(c *fiber.Ctx, req *time.Time) (*time.Time, *ErrorResponse) {
+		return req, nil
+	}, OpenAPIOptions{
+		OperationID: "echoTimestamp",
+		Tags:        []string{"timestamps"},
+	})
+
+	oapi.SetupDocs()
+
+	req := httptest.NewRequest("GET", "/openapi.json", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var spec map[string]interface{}
+	if err := json.Unmarshal(body, &spec); err != nil {
+		t.Fatalf("Failed to parse OpenAPI JSON: %v", err)
+	}
+
+	paths := spec["paths"].(map[string]interface{})
+	timestamp := paths["/timestamp"].(map[string]interface{})
+	post := timestamp["post"].(map[string]interface{})
+
+	reqBody := post["requestBody"].(map[string]interface{})
+	reqSchema := reqBody["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
+	if _, hasRef := reqSchema["$ref"]; hasRef {
+		t.Errorf("Expected top-level time.Time request body to be inlined, got $ref: %v", reqSchema["$ref"])
+	}
+	if reqSchema["type"] != "string" || reqSchema["format"] != "date-time" {
+		t.Errorf("Expected request body schema to be string/date-time, got %v", reqSchema)
+	}
+
+	respSchema := post["responses"].(map[string]interface{})["200"].(map[string]interface{})["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
+	if _, hasRef := respSchema["$ref"]; hasRef {
+		t.Errorf("Expected top-level time.Time response to be inlined, got $ref: %v", respSchema["$ref"])
+	}
+	if respSchema["type"] != "string" || respSchema["format"] != "date-time" {
+		t.Errorf("Expected response schema to be string/date-time, got %v", respSchema)
+	}
+
+	if schemas, ok := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{}); ok {
+		if _, exists := schemas["Time"]; exists {
+			t.Errorf("time.Time should not produce a 'Time' component schema")
+		}
+	}
+}
