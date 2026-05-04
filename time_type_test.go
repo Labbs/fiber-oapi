@@ -209,6 +209,86 @@ func TestTimeTypeAsTopLevelInputAndOutput(t *testing.T) {
 	}
 }
 
+func TestPrimitiveAndSliceTopLevelSchemasInline(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableValidation:  false,
+		EnableOpenAPIDocs: true,
+		OpenAPIDocsPath:   "/docs",
+	})
+
+	Post(oapi, "/echo-string", func(c *fiber.Ctx, req string) (string, *ErrorResponse) {
+		return req, nil
+	}, OpenAPIOptions{OperationID: "echoString"})
+
+	Post(oapi, "/echo-tags", func(c *fiber.Ctx, req []string) ([]string, *ErrorResponse) {
+		return req, nil
+	}, OpenAPIOptions{OperationID: "echoTags"})
+
+	oapi.SetupDocs()
+
+	req := httptest.NewRequest("GET", "/openapi.json", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var spec map[string]interface{}
+	if err := json.Unmarshal(body, &spec); err != nil {
+		t.Fatalf("Failed to parse OpenAPI JSON: %v", err)
+	}
+
+	cases := []struct {
+		path       string
+		wantType   string
+		wantItems  bool
+		wantElem   string
+		schemaName string
+	}{
+		{path: "/echo-string", wantType: "string", schemaName: "String"},
+		{path: "/echo-tags", wantType: "array", wantItems: true, wantElem: "string", schemaName: "Array_String"},
+	}
+
+	paths := spec["paths"].(map[string]interface{})
+	for _, tc := range cases {
+		op := paths[tc.path].(map[string]interface{})["post"].(map[string]interface{})
+		for _, where := range []string{"requestBody", "response"} {
+			var schema map[string]interface{}
+			if where == "requestBody" {
+				schema = op["requestBody"].(map[string]interface{})["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
+			} else {
+				schema = op["responses"].(map[string]interface{})["200"].(map[string]interface{})["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
+			}
+			if _, hasRef := schema["$ref"]; hasRef {
+				t.Errorf("%s %s: expected inline schema, got $ref %v", tc.path, where, schema["$ref"])
+				continue
+			}
+			if schema["type"] != tc.wantType {
+				t.Errorf("%s %s: expected type %q, got %v", tc.path, where, tc.wantType, schema["type"])
+			}
+			if tc.wantItems {
+				items, ok := schema["items"].(map[string]interface{})
+				if !ok {
+					t.Errorf("%s %s: expected items to be set", tc.path, where)
+					continue
+				}
+				if items["type"] != tc.wantElem {
+					t.Errorf("%s %s: expected items.type %q, got %v", tc.path, where, tc.wantElem, items["type"])
+				}
+			}
+		}
+	}
+
+	if schemas, ok := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{}); ok {
+		for _, tc := range cases {
+			if _, exists := schemas[tc.schemaName]; exists {
+				t.Errorf("Did not expect %q to be registered as a component schema", tc.schemaName)
+			}
+		}
+	}
+}
+
 func TestTimeTypeAsTopLevelErrorBody(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
