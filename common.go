@@ -175,7 +175,17 @@ func isZero(v interface{}) bool {
 // Parse path parameters
 func parsePathParams(c *fiber.Ctx, input interface{}) error {
 	inputValue := reflect.ValueOf(input).Elem()
-	inputType := reflect.TypeOf(input).Elem()
+	inputType := dereferenceType(reflect.TypeOf(input).Elem())
+
+	if inputType.Kind() != reflect.Struct {
+		return nil
+	}
+	if inputValue.Kind() == reflect.Ptr {
+		if inputValue.IsNil() {
+			return nil
+		}
+		inputValue = inputValue.Elem()
+	}
 
 	for i := 0; i < inputType.NumField(); i++ {
 		field := inputType.Field(i)
@@ -196,7 +206,17 @@ func parsePathParams(c *fiber.Ctx, input interface{}) error {
 // Parse query parameters
 func parseQueryParams(c *fiber.Ctx, input interface{}) error {
 	inputValue := reflect.ValueOf(input).Elem()
-	inputType := reflect.TypeOf(input).Elem()
+	inputType := dereferenceType(reflect.TypeOf(input).Elem())
+
+	if inputType.Kind() != reflect.Struct {
+		return nil
+	}
+	if inputValue.Kind() == reflect.Ptr {
+		if inputValue.IsNil() {
+			return nil
+		}
+		inputValue = inputValue.Elem()
+	}
 
 	for i := 0; i < inputType.NumField(); i++ {
 		field := inputType.Field(i)
@@ -219,7 +239,17 @@ func parseQueryParams(c *fiber.Ctx, input interface{}) error {
 // Parse header parameters
 func parseHeaderParams(c *fiber.Ctx, input interface{}) error {
 	inputValue := reflect.ValueOf(input).Elem()
-	inputType := reflect.TypeOf(input).Elem()
+	inputType := dereferenceType(reflect.TypeOf(input).Elem())
+
+	if inputType.Kind() != reflect.Struct {
+		return nil
+	}
+	if inputValue.Kind() == reflect.Ptr {
+		if inputValue.IsNil() {
+			return nil
+		}
+		inputValue = inputValue.Elem()
+	}
 
 	for i := 0; i < inputType.NumField(); i++ {
 		field := inputType.Field(i)

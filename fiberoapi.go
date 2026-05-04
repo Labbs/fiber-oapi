@@ -283,8 +283,7 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 				var schemaRef map[string]interface{}
 
-				// For map types, use inline schema instead of reference
-				if inputType.Kind() == reflect.Map {
+				if shouldInlineOperationSchema(inputType) {
 					schemaRef = generateSchema(inputType)
 				} else {
 					inputSchemaName := getTypeName(inputType)
@@ -313,8 +312,7 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 			var schemaRef map[string]interface{}
 
-			// For map types, use inline schema instead of reference
-			if outputType.Kind() == reflect.Map {
+			if shouldInlineOperationSchema(outputType) {
 				schemaRef = generateSchema(outputType)
 			} else {
 				outputSchemaName := getTypeName(outputType)
@@ -335,15 +333,22 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 		// Error response (400/500)
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
-			errorSchemaName := getTypeName(op.ErrorType)
+			errorType := dereferenceType(op.ErrorType)
+
+			var schemaRef map[string]interface{}
+			if shouldInlineOperationSchema(errorType) {
+				schemaRef = generateSchema(errorType)
+			} else {
+				schemaRef = map[string]interface{}{
+					"$ref": "#/components/schemas/" + getTypeName(errorType),
+				}
+			}
 
 			responses["400"] = map[string]interface{}{
 				"description": "Validation error",
 				"content": map[string]interface{}{
 					"application/json": map[string]interface{}{
-						"schema": map[string]interface{}{
-							"$ref": "#/components/schemas/" + errorSchemaName,
-						},
+						"schema": schemaRef,
 					},
 				},
 			}
@@ -579,6 +584,33 @@ func getSimpleTypeName(t reflect.Type) string {
 // isTimeType reports whether t is the standard library time.Time type.
 func isTimeType(t reflect.Type) bool {
 	return t != nil && t.Kind() == reflect.Struct && t.Name() == "Time" && t.PkgPath() == "time"
+}
+
+// shouldInlineOperationSchema reports whether a top-level request, response,
+// or error body schema should be inlined rather than emitted as a $ref to
+// #/components/schemas/. It mirrors the registration logic in collectAllTypes:
+// types that never end up in the components map (primitives, maps, time.Time,
+// slices of inlinable elements) must be inlined to avoid dangling $refs.
+func shouldInlineOperationSchema(t reflect.Type) bool {
+	if t == nil {
+		return false
+	}
+	t = dereferenceType(t)
+	if isTimeType(t) {
+		return true
+	}
+	switch t.Kind() {
+	case reflect.Map:
+		return true
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return true
+	case reflect.Slice:
+		return shouldInlineOperationSchema(t.Elem())
+	}
+	return false
 }
 
 // generateSchema generates an OpenAPI schema from a Go type
