@@ -337,15 +337,22 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 		// Error response (400/500)
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
-			errorSchemaName := getTypeName(op.ErrorType)
+			errorType := dereferenceType(op.ErrorType)
+
+			var schemaRef map[string]interface{}
+			if isTimeType(errorType) {
+				schemaRef = generateSchema(errorType)
+			} else {
+				schemaRef = map[string]interface{}{
+					"$ref": "#/components/schemas/" + getTypeName(errorType),
+				}
+			}
 
 			responses["400"] = map[string]interface{}{
 				"description": "Validation error",
 				"content": map[string]interface{}{
 					"application/json": map[string]interface{}{
-						"schema": map[string]interface{}{
-							"$ref": "#/components/schemas/" + errorSchemaName,
-						},
+						"schema": schemaRef,
 					},
 				},
 			}

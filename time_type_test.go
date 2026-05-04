@@ -172,3 +172,45 @@ func TestTimeTypeAsTopLevelInputAndOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestTimeTypeAsTopLevelErrorBody(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/timestamp-error", func(c *fiber.Ctx, req *EmptyRequest) (*EmptyRequest, *time.Time) {
+		return &EmptyRequest{}, nil
+	}, OpenAPIOptions{
+		OperationID: "timestampError",
+		Tags:        []string{"timestamps"},
+	})
+
+	oapi.SetupDocs()
+
+	req := httptest.NewRequest("GET", "/openapi.json", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	var spec map[string]interface{}
+	if err := json.Unmarshal(body, &spec); err != nil {
+		t.Fatalf("Failed to parse OpenAPI JSON: %v", err)
+	}
+
+	post := spec["paths"].(map[string]interface{})["/timestamp-error"].(map[string]interface{})["post"].(map[string]interface{})
+	errSchema := post["responses"].(map[string]interface{})["400"].(map[string]interface{})["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
+
+	if _, hasRef := errSchema["$ref"]; hasRef {
+		t.Errorf("Expected top-level time.Time error body to be inlined, got $ref: %v", errSchema["$ref"])
+	}
+	if errSchema["type"] != "string" || errSchema["format"] != "date-time" {
+		t.Errorf("Expected error schema to be string/date-time, got %v", errSchema)
+	}
+
+	if schemas, ok := spec["components"].(map[string]interface{})["schemas"].(map[string]interface{}); ok {
+		if _, exists := schemas["Time"]; exists {
+			t.Errorf("time.Time should not produce a 'Time' component schema")
+		}
+	}
+}
