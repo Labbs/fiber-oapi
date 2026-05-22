@@ -50,6 +50,9 @@ func (g *OApiGroup) Group(prefix string, handlers ...fiber.Handler) *OApiGroup {
 }
 
 func handlersToAny(handlers []fiber.Handler) []any {
+	if len(handlers) == 0 {
+		return nil
+	}
 	out := make([]any, len(handlers))
 	for i, h := range handlers {
 		out[i] = h
