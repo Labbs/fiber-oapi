@@ -4,7 +4,7 @@ import (
 	"html/template"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // DocConfig contains configuration for the documentation
@@ -37,7 +37,7 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	}
 
 	// Serve OpenAPI JSON specification
-	o.f.Get(cfg.JSONPath, func(c *fiber.Ctx) error {
+	o.f.Get(cfg.JSONPath, func(c fiber.Ctx) error {
 		spec := o.GenerateOpenAPISpec()
 
 		// Override info section with config values
@@ -52,7 +52,7 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	})
 
 	// Serve Redoc documentation
-	o.f.Get(cfg.DocsPath, func(c *fiber.Ctx) error {
+	o.f.Get(cfg.DocsPath, func(c fiber.Ctx) error {
 		// Generate HTML with embedded Redoc
 		html := generateRedocHTML(cfg.JSONPath, cfg.Title)
 		c.Set("Content-Type", "text/html")
@@ -60,8 +60,8 @@ func (o *OApiApp) SetupDocs(config ...DocConfig) {
 	})
 
 	// Serve additional docs routes (with trailing slash)
-	o.f.Get(cfg.DocsPath+"/", func(c *fiber.Ctx) error {
-		return c.Redirect(cfg.DocsPath)
+	o.f.Get(cfg.DocsPath+"/", func(c fiber.Ctx) error {
+		return c.Redirect().To(cfg.DocsPath)
 	})
 }
 

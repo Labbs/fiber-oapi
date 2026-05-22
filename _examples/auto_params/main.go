@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gofiber/fiber/v2"
-	fiberoapi "github.com/labbs/fiber-oapi"
+	"github.com/gofiber/fiber/v3"
+	fiberoapi "github.com/labbs/fiber-oapi/v3"
 )
 
 type SearchInput struct {
@@ -47,7 +47,7 @@ func main() {
 	oapi := fiberoapi.New(app)
 
 	// Endpoint avec génération automatique des paramètres
-	fiberoapi.Get(oapi, "/users/:name", func(c *fiber.Ctx, input SearchInput) (SearchOutput, ErrorResponse) {
+	fiberoapi.Get(oapi, "/users/:name", func(c fiber.Ctx, input SearchInput) (SearchOutput, ErrorResponse) {
 		// Simulate search results
 		user := User{
 			ID:       1,

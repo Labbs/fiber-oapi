@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // BasicAuthValidator is an optional interface for services that support
@@ -56,7 +56,7 @@ type AWSSignatureParams struct {
 }
 
 // validateBearerToken validates a Bearer token from the Authorization header.
-func validateBearerToken(c *fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
+func validateBearerToken(c fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
 		return nil, fmt.Errorf("authentication required: Bearer token expected")
@@ -71,7 +71,7 @@ func validateBearerToken(c *fiber.Ctx, authService AuthorizationService) (*AuthC
 }
 
 // validateBasicAuth validates Basic Auth credentials from the Authorization header.
-func validateBasicAuth(c *fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
+func validateBasicAuth(c fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
 	basicValidator, ok := authService.(BasicAuthValidator)
 	if !ok {
 		return nil, &AuthError{StatusCode: 500, Message: "Basic Auth scheme configured but AuthService does not implement BasicAuthValidator"}
@@ -101,7 +101,7 @@ func validateBasicAuth(c *fiber.Ctx, authService AuthorizationService) (*AuthCon
 }
 
 // validateAPIKey validates an API key from header, query, or cookie.
-func validateAPIKey(c *fiber.Ctx, scheme SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
+func validateAPIKey(c fiber.Ctx, scheme SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
 	apiKeyValidator, ok := authService.(APIKeyValidator)
 	if !ok {
 		return nil, &AuthError{StatusCode: 500, Message: "API Key scheme configured but AuthService does not implement APIKeyValidator"}
@@ -127,7 +127,7 @@ func validateAPIKey(c *fiber.Ctx, scheme SecurityScheme, authService Authorizati
 }
 
 // validateAWSSigV4 validates an AWS Signature V4 Authorization header.
-func validateAWSSigV4(c *fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
+func validateAWSSigV4(c fiber.Ctx, authService AuthorizationService) (*AuthContext, error) {
 	awsValidator, ok := authService.(AWSSignatureValidator)
 	if !ok {
 		return nil, &AuthError{StatusCode: 500, Message: "AWS SigV4 scheme configured but AuthService does not implement AWSSignatureValidator"}
@@ -202,7 +202,7 @@ func parseAWSSigV4Header(header string) (*AWSSignatureParams, error) {
 }
 
 // validateWithScheme dispatches validation to the appropriate scheme handler.
-func validateWithScheme(c *fiber.Ctx, scheme SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
+func validateWithScheme(c fiber.Ctx, scheme SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
 	switch {
 	case scheme.Type == "http" && strings.EqualFold(scheme.Scheme, "bearer"):
 		return validateBearerToken(c, authService)
@@ -241,7 +241,7 @@ func (e *ScopeError) Error() string {
 // ALL schemes in a requirement must validate (AND semantics).
 // When multiple schemes are present, their AuthContexts are merged: UserIDs must
 // match (or be empty), and roles/scopes/claims are combined.
-func validateSecurityRequirement(c *fiber.Ctx, requirement map[string][]string, schemes map[string]SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
+func validateSecurityRequirement(c fiber.Ctx, requirement map[string][]string, schemes map[string]SecurityScheme, authService AuthorizationService) (*AuthContext, error) {
 	if len(requirement) == 0 {
 		return nil, &AuthError{StatusCode: 500, Message: "empty security requirement"}
 	}

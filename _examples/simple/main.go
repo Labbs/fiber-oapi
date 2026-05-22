@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/gofiber/fiber/v2"
-	fiberoapi "github.com/labbs/fiber-oapi"
+	"github.com/gofiber/fiber/v3"
+	fiberoapi "github.com/labbs/fiber-oapi/v3"
 )
 
 type ContextRequest struct {
@@ -97,7 +97,7 @@ func main() {
 	// appOApi := fiberoapi.New(app) // Will use defaults: /docs and /openapi.json
 
 	// Route GET avec validation (path + header parameters)
-	fiberoapi.Get(appOApi, "/greeting/:name", func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
+	fiberoapi.Get(appOApi, "/greeting/:name", func(c fiber.Ctx, input GetInput) (GetOutput, GetError) {
 		name := input.Name
 		return GetOutput{Message: fmt.Sprintf("Hello %s (request: %s)", name, input.RequestID)}, GetError{}
 	}, fiberoapi.OpenAPIOptions{
@@ -108,7 +108,7 @@ func main() {
 	})
 
 	// POST route with complex validation
-	fiberoapi.Post(appOApi, "/users", func(c *fiber.Ctx, input CreateUserInput) (CreateUserOutput, CreateUserError) {
+	fiberoapi.Post(appOApi, "/users", func(c fiber.Ctx, input CreateUserInput) (CreateUserOutput, CreateUserError) {
 		// Simulate user creation
 		if input.Username == "admin" {
 			return CreateUserOutput{}, CreateUserError{
@@ -133,7 +133,7 @@ func main() {
 	})
 
 	// PUT route for updating user
-	fiberoapi.Put(appOApi, "/users/:id", func(c *fiber.Ctx, input UpdateUserInput) (UpdateUserOutput, CreateUserError) {
+	fiberoapi.Put(appOApi, "/users/:id", func(c fiber.Ctx, input UpdateUserInput) (UpdateUserOutput, CreateUserError) {
 		// Simulate user update
 		if input.ID == "nonexistent" {
 			return UpdateUserOutput{}, CreateUserError{
@@ -159,7 +159,7 @@ func main() {
 	})
 
 	// DELETE route for removing user
-	fiberoapi.Delete(appOApi, "/users/:id", func(c *fiber.Ctx, input DeleteUserInput) (DeleteUserOutput, CreateUserError) {
+	fiberoapi.Delete(appOApi, "/users/:id", func(c fiber.Ctx, input DeleteUserInput) (DeleteUserOutput, CreateUserError) {
 		// Simulate user deletion
 		if input.ID == "protected" {
 			return DeleteUserOutput{}, CreateUserError{
@@ -183,7 +183,7 @@ func main() {
 	})
 
 	// GET route with group
-	fiberoapi.Get(v1, "/greeting/:name", func(c *fiber.Ctx, input GetInput) (GetOutput, GetError) {
+	fiberoapi.Get(v1, "/greeting/:name", func(c fiber.Ctx, input GetInput) (GetOutput, GetError) {
 		name := input.Name
 		return GetOutput{Message: "Hello " + name}, GetError{}
 	}, fiberoapi.OpenAPIOptions{

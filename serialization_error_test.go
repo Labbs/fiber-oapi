@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // UnserializableOutput contains a channel which cannot be serialized to JSON
@@ -27,7 +27,7 @@ func TestResponseSerializationError(t *testing.T) {
 	oapi := New(app)
 
 	// Handler that returns an unserializable output (contains a channel)
-	Get(oapi, "/unserializable", func(c *fiber.Ctx, input SerializationTestInput) (UnserializableOutput, *SerializationTestError) {
+	Get(oapi, "/unserializable", func(c fiber.Ctx, input SerializationTestInput) (UnserializableOutput, *SerializationTestError) {
 		return UnserializableOutput{
 			Name:    "test",
 			Channel: make(chan string), // This will fail JSON marshaling
@@ -74,7 +74,7 @@ func TestErrorSerializationError(t *testing.T) {
 	oapi := New(app)
 
 	// Handler that returns an unserializable error
-	Get(oapi, "/unserializable-error", func(c *fiber.Ctx, input SerializationTestInput) (map[string]string, *UnserializableError) {
+	Get(oapi, "/unserializable-error", func(c fiber.Ctx, input SerializationTestInput) (map[string]string, *UnserializableError) {
 		return nil, &UnserializableError{
 			StatusCode: 400,
 			Channel:    make(chan string), // This will fail JSON marshaling

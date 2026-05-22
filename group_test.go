@@ -3,7 +3,7 @@ package fiberoapi
 import (
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -27,7 +27,7 @@ func TestGroupFunctionality(t *testing.T) {
 	initialOpCount := len(oapi.GetOperations())
 
 	// Add a route to the group using the unified Get function
-	Get(v1, "/users/:id", func(c *fiber.Ctx, input struct {
+	Get(v1, "/users/:id", func(c fiber.Ctx, input struct {
 		ID int `path:"id"`
 	}) (struct {
 		ID int `json:"id"`
@@ -58,7 +58,7 @@ func TestGroupWrapper(t *testing.T) {
 	v1 := oapi.Group("/api/v1")
 
 	// Test that the wrapper correctly registers operations
-	Post(v1, "/users", func(c *fiber.Ctx, input struct {
+	Post(v1, "/users", func(c fiber.Ctx, input struct {
 		Name string `json:"name"`
 	}) (struct {
 		ID   int    `json:"id"`
@@ -102,7 +102,7 @@ func TestNestedGroups(t *testing.T) {
 	assert.Equal(t, "/api/v1/users", users.GetPrefix())
 
 	// Add an operation to the deeply nested group
-	Get(users, "/:id", func(c *fiber.Ctx, input struct {
+	Get(users, "/:id", func(c fiber.Ctx, input struct {
 		ID int `path:"id"`
 	}) (struct {
 		ID int `json:"id"`

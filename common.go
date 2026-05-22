@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Global validator instance
@@ -20,7 +20,7 @@ func init() {
 
 // Function to parse input from the request
 // parseInput parses the input from the request
-func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *OpenAPIOptions) (TInput, error) {
+func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *OpenAPIOptions) (TInput, error) {
 	var input TInput
 
 	// Parse path parameters if needed
@@ -44,7 +44,7 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 
 		// Parse the body if there's content OR if it's a POST/PUT/PATCH with specified Content-Type
 		if bodyLength > 0 || strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
-			err = c.BodyParser(&input)
+			err = c.Bind().Body(&input)
 			if err != nil {
 				// For POST requests without a body, ignore the parsing error
 				if bodyLength == 0 && method == "POST" {
@@ -134,7 +134,7 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 }
 
 // Function to handle custom errors
-func handleCustomError(c *fiber.Ctx, customErr interface{}) error {
+func handleCustomError(c fiber.Ctx, customErr interface{}) error {
 	// Use reflection to extract error information
 	errValue := reflect.ValueOf(customErr)
 
@@ -173,7 +173,7 @@ func isZero(v interface{}) bool {
 }
 
 // Parse path parameters
-func parsePathParams(c *fiber.Ctx, input interface{}) error {
+func parsePathParams(c fiber.Ctx, input interface{}) error {
 	inputValue := reflect.ValueOf(input).Elem()
 	inputType := dereferenceType(reflect.TypeOf(input).Elem())
 
@@ -204,7 +204,7 @@ func parsePathParams(c *fiber.Ctx, input interface{}) error {
 }
 
 // Parse query parameters
-func parseQueryParams(c *fiber.Ctx, input interface{}) error {
+func parseQueryParams(c fiber.Ctx, input interface{}) error {
 	inputValue := reflect.ValueOf(input).Elem()
 	inputType := dereferenceType(reflect.TypeOf(input).Elem())
 
@@ -237,7 +237,7 @@ func parseQueryParams(c *fiber.Ctx, input interface{}) error {
 }
 
 // Parse header parameters
-func parseHeaderParams(c *fiber.Ctx, input interface{}) error {
+func parseHeaderParams(c fiber.Ctx, input interface{}) error {
 	inputValue := reflect.ValueOf(input).Elem()
 	inputType := dereferenceType(reflect.TypeOf(input).Elem())
 

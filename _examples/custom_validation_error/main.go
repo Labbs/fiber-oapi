@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
-	"github.com/gofiber/fiber/v2"
-	fiberoapi "github.com/labbs/fiber-oapi"
+	"github.com/gofiber/fiber/v3"
+	fiberoapi "github.com/labbs/fiber-oapi/v3"
 )
 
 // CustomErrorResponse is the structure for custom validation error responses
@@ -38,7 +38,7 @@ func main() {
 		EnableValidation:  true,
 		EnableOpenAPIDocs: true,
 		// Define your custom handler for validation errors
-		ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+		ValidationErrorHandler: func(c fiber.Ctx, err error) error {
 			// You can parse the validation error to extract more details
 			// or simply return your custom structure
 			return c.Status(fiber.StatusBadRequest).JSON(CustomErrorResponse{
@@ -53,7 +53,7 @@ func main() {
 	fiberoapi.Post[CreateUserInput, CreateUserOutput, struct{}](
 		oapi,
 		"/users",
-		func(c *fiber.Ctx, input CreateUserInput) (CreateUserOutput, struct{}) {
+		func(c fiber.Ctx, input CreateUserInput) (CreateUserOutput, struct{}) {
 			// User creation logic goes here
 			return CreateUserOutput{
 				ID:      1,

@@ -3,7 +3,7 @@ package fiberoapi
 import (
 	"reflect"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // OApiRouter interface that both OApiApp and OApiGroup implement
@@ -44,7 +44,7 @@ func (o *OApiApp) Listen(addr string) error {
 }
 
 // HandlerFunc represents a handler function with typed input and output
-type HandlerFunc[TInput any, TOutput any, TError any] func(c *fiber.Ctx, input TInput) (TOutput, TError)
+type HandlerFunc[TInput any, TOutput any, TError any] func(c fiber.Ctx, input TInput) (TOutput, TError)
 
 // PathInfo represents information about a path parameter
 type PathInfo struct {
@@ -55,11 +55,11 @@ type PathInfo struct {
 
 // ValidationErrorHandler is a function type for handling validation errors
 // It receives the fiber context and the validation error, and returns a fiber error response
-type ValidationErrorHandler func(c *fiber.Ctx, err error) error
+type ValidationErrorHandler func(c fiber.Ctx, err error) error
 
 // AuthErrorHandler is a function type for handling authentication/authorization errors
 // It receives the fiber context and the AuthError, and returns a fiber error response
-type AuthErrorHandler func(c *fiber.Ctx, err *AuthError) error
+type AuthErrorHandler func(c fiber.Ctx, err *AuthError) error
 
 // Config represents configuration for the OApi wrapper
 type Config struct {

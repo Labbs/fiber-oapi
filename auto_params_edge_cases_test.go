@@ -3,7 +3,7 @@ package fiberoapi
 import (
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,7 +23,7 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 			Code int `json:"code"`
 		}
 
-		Get(oapi, "/empty", func(c *fiber.Ctx, input EmptyInput) (EmptyOutput, EmptyError) {
+		Get(oapi, "/empty", func(c fiber.Ctx, input EmptyInput) (EmptyOutput, EmptyError) {
 			return EmptyOutput{Message: "empty"}, EmptyError{}
 		}, OpenAPIOptions{
 			OperationID: "emptyTest",
@@ -53,7 +53,7 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 			Code int `json:"code"`
 		}
 
-		Get(oapi, "/unexported/:public", func(c *fiber.Ctx, input UnexportedFieldsInput) (UnexportedOutput, UnexportedError) {
+		Get(oapi, "/unexported/:public", func(c fiber.Ctx, input UnexportedFieldsInput) (UnexportedOutput, UnexportedError) {
 			return UnexportedOutput{Message: input.PublicField}, UnexportedError{}
 		}, OpenAPIOptions{
 			OperationID: "unexportedTest",
@@ -86,7 +86,7 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 			Code int `json:"code"`
 		}
 
-		Get(oapi, "/both/:field", func(c *fiber.Ctx, input BothTagsInput) (BothTagsOutput, BothTagsError) {
+		Get(oapi, "/both/:field", func(c fiber.Ctx, input BothTagsInput) (BothTagsOutput, BothTagsError) {
 			return BothTagsOutput{Message: input.Field}, BothTagsError{}
 		}, OpenAPIOptions{
 			OperationID: "bothTagsTest",
@@ -149,7 +149,7 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 			Code int `json:"code"`
 		}
 
-		Get(oapi, "/complex", func(c *fiber.Ctx, input ComplexValidationInput) (ComplexValidationOutput, ComplexValidationError) {
+		Get(oapi, "/complex", func(c fiber.Ctx, input ComplexValidationInput) (ComplexValidationOutput, ComplexValidationError) {
 			return ComplexValidationOutput{Message: "valid"}, ComplexValidationError{}
 		}, OpenAPIOptions{
 			OperationID: "complexValidationTest",
@@ -190,7 +190,7 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 			Code int `json:"code"`
 		}
 
-		Get(oapi, "/pointers", func(c *fiber.Ctx, input PointerInput) (PointerOutput, PointerError) {
+		Get(oapi, "/pointers", func(c fiber.Ctx, input PointerInput) (PointerOutput, PointerError) {
 			return PointerOutput{Message: "pointer"}, PointerError{}
 		}, OpenAPIOptions{
 			OperationID: "pointerTest",

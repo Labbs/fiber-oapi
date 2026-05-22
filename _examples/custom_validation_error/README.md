@@ -25,7 +25,7 @@ Use the `ValidationErrorHandler` field in the `Config` to provide a custom funct
 ```go
 // Minimal configuration - validation is automatically enabled
 oapi := fiberoapi.New(app, fiberoapi.Config{
-    ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+    ValidationErrorHandler: func(c fiber.Ctx, err error) error {
         // Return your custom error structure
         return c.Status(fiber.StatusBadRequest).JSON(CustomErrorResponse{
             Success: false,
@@ -41,7 +41,7 @@ oapi := fiberoapi.New(app, fiberoapi.Config{
 oapi := fiberoapi.New(app, fiberoapi.Config{
     EnableValidation: true,
     EnableOpenAPIDocs: true,
-    ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+    ValidationErrorHandler: func(c fiber.Ctx, err error) error {
         return c.Status(fiber.StatusBadRequest).JSON(CustomErrorResponse{
             Success: false,
             Message: err.Error(),
@@ -118,7 +118,7 @@ curl -X POST http://localhost:3000/users \
 You can also parse the validation error to extract detailed information:
 
 ```go
-ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+ValidationErrorHandler: func(c fiber.Ctx, err error) error {
     // Parse validator errors for more details
     if validationErrs, ok := err.(validator.ValidationErrors); ok {
         errors := make([]map[string]string, 0)
