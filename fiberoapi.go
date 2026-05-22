@@ -925,8 +925,7 @@ func Method[TInput any, TOutput any, TError any](
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
 			// Check for authentication/authorization errors first
-			var authErr *AuthError
-			if errors.As(err, &authErr) {
+			if authErr, ok := errors.AsType[*AuthError](err); ok {
 				if app.config.AuthErrorHandler != nil {
 					return app.config.AuthErrorHandler(c, authErr)
 				}

@@ -10,7 +10,7 @@ import (
 )
 
 type AutoParamsTestInput struct {
-	UserID   string  `path:"userId" validate:"required"`
+	UserID   string  `uri:"userId" validate:"required"`
 	Name     string  `query:"name" validate:"required"`
 	Age      int     `query:"age" validate:"omitempty,min=0,max=120"`
 	Active   bool    `query:"active"`
@@ -124,7 +124,7 @@ func TestMergeWithManualParameters(t *testing.T) {
 	oapi := New(app)
 
 	type MergeTestInput struct {
-		UserID string `path:"userId" validate:"required"`
+		UserID string `uri:"userId" validate:"required"`
 		Name   string `query:"name" validate:"required"`
 		Filter string `query:"filter"`
 	}
@@ -242,7 +242,7 @@ func TestAutoParamsPointerTypesInline(t *testing.T) {
 	oapi := New(app)
 
 	type PointerTestInput struct {
-		ID           string  `path:"id" validate:"required"`
+		ID           string  `uri:"id" validate:"required"`
 		OptionalName *string `query:"optionalName"`
 		RequiredName string  `query:"requiredName" validate:"required"`
 		OmitEmpty    string  `query:"omitEmpty" validate:"omitempty"`

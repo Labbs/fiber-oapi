@@ -325,7 +325,7 @@ func TestHeaderMixedWithPathAndQuery(t *testing.T) {
 	oapi := New(app)
 
 	type MixedInput struct {
-		ID        string `path:"id" validate:"required"`
+		ID        string `uri:"id" validate:"required"`
 		Filter    string `query:"filter"`
 		RequestID string `header:"x-request-id" validate:"required"`
 	}

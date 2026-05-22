@@ -10,7 +10,7 @@ import (
 )
 
 type SearchInput struct {
-	Name     string  `path:"name" validate:"required"`
+	Name     string  `uri:"name" validate:"required"`
 	Email    string  `query:"email" validate:"omitempty,email"`
 	Age      int     `query:"age" validate:"omitempty,min=0,max=120"`
 	Active   bool    `query:"active"`

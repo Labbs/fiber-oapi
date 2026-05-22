@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+_examples/auth/auth
+_examples/auto_params/demo
+_examples/custom_validation_error/custom_validation_error_example
+_examples/simple/simple

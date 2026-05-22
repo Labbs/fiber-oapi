@@ -19,14 +19,14 @@ type PostUserInput struct {
 }
 
 type PostUserWithPathInput struct {
-	GroupID  string `path:"groupId" validate:"required,uuid4"`
+	GroupID  string `uri:"groupId" validate:"required,uuid4"`
 	Username string `json:"username" validate:"required,min=3,max=20"`
 	Email    string `json:"email" validate:"required,email"`
 	Role     string `json:"role" validate:"required,oneof=member admin"`
 }
 
 type PostProductInput struct {
-	CategoryID  string   `path:"categoryId" validate:"required,uuid4"`
+	CategoryID  string   `uri:"categoryId" validate:"required,uuid4"`
 	Name        string   `json:"name" validate:"required,min=2,max=100"`
 	Description string   `json:"description" validate:"omitempty,max=1000"`
 	Price       float64  `json:"price" validate:"required,min=0"`

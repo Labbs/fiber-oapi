@@ -12,7 +12,7 @@ import (
 
 // Test structs pour PUT
 type PutUserInput struct {
-	ID       string `path:"id" validate:"required"`
+	ID       string `uri:"id" validate:"required"`
 	Username string `json:"username" validate:"omitempty,min=3,max=20,alphanum"`
 	Email    string `json:"email" validate:"omitempty,email"`
 	Age      int    `json:"age" validate:"omitempty,min=13,max=120"`
@@ -20,8 +20,8 @@ type PutUserInput struct {
 }
 
 type PutProductInput struct {
-	CategoryID  string   `path:"categoryId" validate:"required,uuid4"`
-	ProductID   string   `path:"productId" validate:"required,uuid4"`
+	CategoryID  string   `uri:"categoryId" validate:"required,uuid4"`
+	ProductID   string   `uri:"productId" validate:"required,uuid4"`
 	Name        string   `json:"name" validate:"omitempty,min=2,max=100"`
 	Description string   `json:"description" validate:"omitempty,max=1000"`
 	Price       float64  `json:"price" validate:"omitempty,min=0"`

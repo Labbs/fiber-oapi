@@ -13,7 +13,7 @@ import (
 // Advanced tests for validation with validator
 
 type UserCreateInput struct {
-	Username string `path:"username" validate:"required,min=3,max=20,alphanum"`
+	Username string `uri:"username" validate:"required,min=3,max=20,alphanum"`
 	Email    string `query:"email" validate:"required,email"`
 	Age      int    `query:"age" validate:"required,min=13,max=120"`
 	Website  string `query:"website" validate:"omitempty,url"`
@@ -21,8 +21,8 @@ type UserCreateInput struct {
 }
 
 type ProductInput struct {
-	CategoryID string  `path:"categoryId" validate:"required,uuid4"`
-	ProductID  string  `path:"productId" validate:"required,numeric"`
+	CategoryID string  `uri:"categoryId" validate:"required,uuid4"`
+	ProductID  string  `uri:"productId" validate:"required,numeric"`
 	MinPrice   float64 `query:"minPrice" validate:"omitempty,min=0"`
 	MaxPrice   float64 `query:"maxPrice" validate:"omitempty,min=0,gtfield=MinPrice"`
 	InStock    bool    `query:"inStock"`
@@ -227,7 +227,7 @@ func TestValidation_CustomMessages(t *testing.T) {
 	oapi := New(app)
 
 	type SimpleInput struct {
-		Name string `path:"name" validate:"required,min=3"`
+		Name string `uri:"name" validate:"required,min=3"`
 	}
 
 	Get(oapi, "/simple/:name", func(c fiber.Ctx, input SimpleInput) (TestOutput, TestError) {

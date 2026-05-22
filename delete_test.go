@@ -12,16 +12,16 @@ import (
 
 // Test structs pour DELETE
 type DeleteUserInput struct {
-	ID string `path:"id" validate:"required"`
+	ID string `uri:"id" validate:"required"`
 }
 
 type DeleteProductInput struct {
-	CategoryID string `path:"categoryId" validate:"required,uuid4"`
-	ProductID  string `path:"productId" validate:"required,uuid4"`
+	CategoryID string `uri:"categoryId" validate:"required,uuid4"`
+	ProductID  string `uri:"productId" validate:"required,uuid4"`
 }
 
 type DeleteWithQueryInput struct {
-	ID     string `path:"id" validate:"required"`
+	ID     string `uri:"id" validate:"required"`
 	Force  bool   `query:"force"`
 	Reason string `query:"reason" validate:"omitempty,min=5,max=100"`
 }

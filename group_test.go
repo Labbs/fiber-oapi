@@ -28,7 +28,7 @@ func TestGroupFunctionality(t *testing.T) {
 
 	// Add a route to the group using the unified Get function
 	Get(v1, "/users/:id", func(c fiber.Ctx, input struct {
-		ID int `path:"id"`
+		ID int `uri:"id"`
 	}) (struct {
 		ID int `json:"id"`
 	}, struct{}) {
@@ -103,7 +103,7 @@ func TestNestedGroups(t *testing.T) {
 
 	// Add an operation to the deeply nested group
 	Get(users, "/:id", func(c fiber.Ctx, input struct {
-		ID int `path:"id"`
+		ID int `uri:"id"`
 	}) (struct {
 		ID int `json:"id"`
 	}, struct{}) {

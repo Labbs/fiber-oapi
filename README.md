@@ -24,6 +24,10 @@ A Go library that extends Fiber to add automatic OpenAPI documentation generatio
 go get github.com/labbs/fiber-oapi/v3
 ```
 
+> **Upgrading from v1.x?** v3 tracks Fiber v3 and requires Go 1.26+. Two breaking changes to be aware of:
+> - Handlers now take `fiber.Ctx` (struct value) instead of `*fiber.Ctx`.
+> - The path-parameter struct tag is now `uri:` instead of `path:` (Fiber v3 binder convention). Query and header tags are unchanged.
+
 ## Quick Start
 
 ```go
@@ -40,7 +44,7 @@ func main() {
 
     fiberoapi.Get(oapi, "/hello/:name",
         func(c fiber.Ctx, input struct {
-            Name string `path:"name" validate:"required,min=2"`
+            Name string `uri:"name" validate:"required,min=2"`
         }) (fiber.Map, *fiberoapi.ErrorResponse) {
             return fiber.Map{"message": "Hello " + input.Name}, nil
         },
@@ -98,7 +102,7 @@ fiberoapi.Method(method, router, path, handler, options) // Custom HTTP method
 
 ```go
 type MyInput struct {
-    ID     string `path:"id" validate:"required"`           // Path parameter
+    ID     string `uri:"id" validate:"required"`           // Path parameter
     Filter string `query:"filter" validate:"omitempty"`      // Query parameter
     Auth   string `header:"Authorization"`                   // Header parameter
     Title  string `json:"title" validate:"required,min=1"`   // JSON body field
@@ -286,7 +290,7 @@ fiberoapi.Put(oapi, "/documents/:id", handler,
 
 // Resource-based access via struct tags
 type UpdateDocInput struct {
-    DocumentID string `path:"documentId" validate:"required" resource:"document" action:"write"`
+    DocumentID string `uri:"documentId" validate:"required" resource:"document" action:"write"`
     Title      string `json:"title" validate:"required"`
 }
 

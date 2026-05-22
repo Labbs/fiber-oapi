@@ -135,11 +135,11 @@ func (m *MockAuthService) GetUserPermissions(ctx *AuthContext, resourceType, res
 
 // Test structures
 type TestRequest struct {
-	ID string `path:"id" validate:"required"`
+	ID string `uri:"id" validate:"required"`
 }
 
 type TestRequestWithAuth struct {
-	ID         string `path:"id" validate:"required"`
+	ID         string `uri:"id" validate:"required"`
 	ResourceID string `resource:"document" action:"read"`
 }
 
@@ -365,7 +365,7 @@ func TestScopeBasedAccess(t *testing.T) {
 	// Endpoint requiring write scope
 	Put(oapi, "/documents/:id",
 		func(c fiber.Ctx, input struct {
-			ID   string `path:"id" validate:"required"`
+			ID   string `uri:"id" validate:"required"`
 			Name string `json:"name" validate:"required"`
 		}) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)

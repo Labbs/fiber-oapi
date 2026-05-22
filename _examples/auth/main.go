@@ -197,11 +197,11 @@ type CreateUserResponse struct {
 }
 
 type DocumentRequest struct {
-	DocumentID string `path:"documentId" validate:"required"`
+	DocumentID string `uri:"documentId" validate:"required"`
 }
 
 type UpdateDocumentRequest struct {
-	DocumentID string `path:"documentId" validate:"required"`
+	DocumentID string `uri:"documentId" validate:"required"`
 	Title      string `json:"title" validate:"required,min=1,max=100"`
 	Content    string `json:"content" validate:"required,min=1"`
 }

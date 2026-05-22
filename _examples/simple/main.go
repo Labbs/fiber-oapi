@@ -8,11 +8,11 @@ import (
 )
 
 type ContextRequest struct {
-	RequestId string `path:"requestId" validate:"required,min=2"`
+	RequestId string `uri:"requestId" validate:"required,min=2"`
 }
 
 type GetInput struct {
-	Name      string `path:"name" validate:"required,min=2"`
+	Name      string `uri:"name" validate:"required,min=2"`
 	RequestID string `header:"x-request-id" validate:"omitempty"`
 }
 
@@ -53,7 +53,7 @@ type CreateUserError struct {
 
 // Structures pour PUT
 type UpdateUserInput struct {
-	ID       string `path:"id" validate:"required"`
+	ID       string `uri:"id" validate:"required"`
 	Username string `json:"username" validate:"omitempty,min=3,max=20,alphanum"`
 	Email    string `json:"email" validate:"omitempty,email"`
 	Age      int    `json:"age" validate:"omitempty,min=13,max=120"`
@@ -70,7 +70,7 @@ type UpdateUserOutput struct {
 
 // Structures pour DELETE
 type DeleteUserInput struct {
-	ID string `path:"id" validate:"required"`
+	ID string `uri:"id" validate:"required"`
 }
 
 type DeleteUserOutput struct {

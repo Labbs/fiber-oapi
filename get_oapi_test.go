@@ -12,28 +12,28 @@ import (
 
 // Test structs
 type SingleParamInput struct {
-	Name string `path:"name" validate:"required"`
+	Name string `uri:"name" validate:"required"`
 }
 
 type MultiParamInput struct {
-	UserID string `path:"userId" validate:"required"`
-	PostID string `path:"postId" validate:"required"`
+	UserID string `uri:"userId" validate:"required"`
+	PostID string `uri:"postId" validate:"required"`
 }
 
 type ParamWithQueryInput struct {
-	Name string `path:"name" validate:"required"`
+	Name string `uri:"name" validate:"required"`
 	Lang string `query:"lang"`
 }
 
 type ValidationInput struct {
-	Name  string `path:"name" validate:"required,min=2"`
+	Name  string `uri:"name" validate:"required,min=2"`
 	Email string `query:"email" validate:"omitempty,email"`
 	Age   int    `query:"age" validate:"omitempty,min=0,max=120"`
 }
 
 type MissingParamInput struct {
-	Name         string `path:"name"`
-	MissingParam string `path:"missing"` // This parameter doesn't exist in the path
+	Name         string `uri:"name"`
+	MissingParam string `uri:"missing"` // This parameter doesn't exist in the path
 }
 
 // Test outputs
@@ -273,7 +273,7 @@ func TestGetOApi_OperationStorage(t *testing.T) {
 
 	// Input pour le test avec le bon tag
 	type TestInput struct {
-		ID string `path:"id"`
+		ID string `uri:"id"`
 	}
 
 	Get(oapi, "/test/:id", func(c fiber.Ctx, input TestInput) (TestOutput, TestError) {
@@ -395,7 +395,7 @@ func TestGetOApi_ValidationRequired(t *testing.T) {
 	// Test with empty name (shouldn't happen with Fiber path params, but let's test anyway)
 	// To simulate, we'll create a structure with a required query field
 	type QueryRequiredInput struct {
-		Name     string `path:"name"`
+		Name     string `uri:"name"`
 		Required string `query:"required" validate:"required"`
 	}
 

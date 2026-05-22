@@ -41,8 +41,8 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 
 	t.Run("Struct with unexported fields", func(t *testing.T) {
 		type UnexportedFieldsInput struct {
-			PublicField string `path:"public" validate:"required"`
-			_           string `path:"private" validate:"required"` // This should be ignored
+			PublicField string `uri:"public" validate:"required"`
+			_           string `uri:"private" validate:"required"` // This should be ignored
 		}
 
 		type UnexportedOutput struct {
@@ -75,7 +75,7 @@ func TestAutoParamsEdgeCases(t *testing.T) {
 	t.Run("Fields with both path and query tags", func(t *testing.T) {
 		type BothTagsInput struct {
 			// This is an invalid case but we should handle it gracefully
-			Field string `path:"field" query:"field" validate:"required"`
+			Field string `uri:"field" query:"field" validate:"required"`
 		}
 
 		type BothTagsOutput struct {
