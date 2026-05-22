@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestSetupDocs_Documentation(t *testing.T) {
@@ -53,7 +53,7 @@ func TestSetupDocs_CustomConfig(t *testing.T) {
 	oapi := New(app)
 
 	// Add a test route
-	Get(oapi, "/health", func(c *fiber.Ctx, input struct{}) (interface{}, struct{}) {
+	Get(oapi, "/health", func(c fiber.Ctx, input struct{}) (interface{}, struct{}) {
 		return map[string]string{"status": "ok"}, struct{}{}
 	}, OpenAPIOptions{
 		OperationID: "health-check",

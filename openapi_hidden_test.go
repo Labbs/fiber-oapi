@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +38,7 @@ func TestOpenAPIHiddenField_ExcludedFromBodySchema(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/items", func(c *fiber.Ctx, input *HiddenFieldInput) (*HiddenFieldOutput, *HiddenFieldError) {
+	Post(oapi, "/items", func(c fiber.Ctx, input *HiddenFieldInput) (*HiddenFieldOutput, *HiddenFieldError) {
 		return &HiddenFieldOutput{ID: 1, Name: input.Name}, nil
 	}, OpenAPIOptions{
 		OperationID: "createItem",
@@ -90,7 +90,7 @@ func TestOpenAPIHiddenField_ExcludedFromQueryParams(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Get(oapi, "/search", func(c *fiber.Ctx, input HiddenQueryInput) (*HiddenFieldOutput, *HiddenFieldError) {
+	Get(oapi, "/search", func(c fiber.Ctx, input HiddenQueryInput) (*HiddenFieldOutput, *HiddenFieldError) {
 		return &HiddenFieldOutput{ID: 1, Name: input.Name}, nil
 	}, OpenAPIOptions{
 		OperationID: "searchItems",

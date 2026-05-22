@@ -7,21 +7,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Test structs pour DELETE
 type DeleteUserInput struct {
-	ID string `path:"id" validate:"required"`
+	ID string `uri:"id" validate:"required"`
 }
 
 type DeleteProductInput struct {
-	CategoryID string `path:"categoryId" validate:"required,uuid4"`
-	ProductID  string `path:"productId" validate:"required,uuid4"`
+	CategoryID string `uri:"categoryId" validate:"required,uuid4"`
+	ProductID  string `uri:"productId" validate:"required,uuid4"`
 }
 
 type DeleteWithQueryInput struct {
-	ID     string `path:"id" validate:"required"`
+	ID     string `uri:"id" validate:"required"`
 	Force  bool   `query:"force"`
 	Reason string `query:"reason" validate:"omitempty,min=5,max=100"`
 }
@@ -44,7 +44,7 @@ func TestDeleteOApi_SimpleDelete(t *testing.T) {
 	oapi := New(app)
 
 	// Test with simple DELETE (path param only)
-	Delete(oapi, "/users/:id", func(c *fiber.Ctx, input DeleteUserInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/users/:id", func(c fiber.Ctx, input DeleteUserInput) (DeleteOutput, DeleteError) {
 		return DeleteOutput{
 			ID:      input.ID,
 			Message: fmt.Sprintf("User %s deleted successfully", input.ID),
@@ -84,7 +84,7 @@ func TestDeleteOApi_MultiplePathParams(t *testing.T) {
 	oapi := New(app)
 
 	// Test with DELETE + multiple path parameters
-	Delete(oapi, "/categories/:categoryId/products/:productId", func(c *fiber.Ctx, input DeleteProductInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/categories/:categoryId/products/:productId", func(c fiber.Ctx, input DeleteProductInput) (DeleteOutput, DeleteError) {
 		return DeleteOutput{
 			ID:      input.ProductID,
 			Message: fmt.Sprintf("Product %s deleted from category %s", input.ProductID, input.CategoryID),
@@ -128,7 +128,7 @@ func TestDeleteOApi_WithQueryParams(t *testing.T) {
 	oapi := New(app)
 
 	// Test with DELETE + path + query parameters
-	Delete(oapi, "/users/:id", func(c *fiber.Ctx, input DeleteWithQueryInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/users/:id", func(c fiber.Ctx, input DeleteWithQueryInput) (DeleteOutput, DeleteError) {
 		message := fmt.Sprintf("User %s deleted", input.ID)
 		if input.Force {
 			message += " (forced)"
@@ -220,7 +220,7 @@ func TestDeleteOApi_Validation(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Delete(oapi, "/categories/:categoryId/products/:productId", func(c *fiber.Ctx, input DeleteProductInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/categories/:categoryId/products/:productId", func(c fiber.Ctx, input DeleteProductInput) (DeleteOutput, DeleteError) {
 		return DeleteOutput{
 			ID:      input.ProductID,
 			Message: "Product deleted",
@@ -231,7 +231,7 @@ func TestDeleteOApi_Validation(t *testing.T) {
 		Summary:     "Delete product with validation",
 	})
 
-	Delete(oapi, "/users/:id", func(c *fiber.Ctx, input DeleteWithQueryInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/users/:id", func(c fiber.Ctx, input DeleteWithQueryInput) (DeleteOutput, DeleteError) {
 		return DeleteOutput{
 			ID:      input.ID,
 			Message: "User deleted",
@@ -333,7 +333,7 @@ func TestDeleteOApi_ErrorHandling(t *testing.T) {
 	oapi := New(app)
 
 	// Test with custom error handling
-	Delete(oapi, "/users/:id", func(c *fiber.Ctx, input DeleteUserInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/users/:id", func(c fiber.Ctx, input DeleteUserInput) (DeleteOutput, DeleteError) {
 		if input.ID == "notfound" {
 			return DeleteOutput{}, DeleteError{
 				StatusCode: 404,
@@ -436,7 +436,7 @@ func TestDeleteOApi_OperationStorage(t *testing.T) {
 	// Check that DELETE operations are properly stored
 	initialCount := len(oapi.operations)
 
-	Delete(oapi, "/test/:id", func(c *fiber.Ctx, input DeleteUserInput) (DeleteOutput, DeleteError) {
+	Delete(oapi, "/test/:id", func(c fiber.Ctx, input DeleteUserInput) (DeleteOutput, DeleteError) {
 		return DeleteOutput{Message: "test", Deleted: true}, DeleteError{}
 	}, OpenAPIOptions{
 		OperationID: "test-delete-operation",

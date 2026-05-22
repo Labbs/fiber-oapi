@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Define nested structs for testing
@@ -45,7 +45,7 @@ func TestNestedStructSchemaGeneration(t *testing.T) {
 	oapi := New(app)
 
 	// Add a route with nested structs
-	Post(oapi, "/users", func(c *fiber.Ctx, req *CreateUserRequest) (*CreateUserResponse, *ErrorResponse) {
+	Post(oapi, "/users", func(c fiber.Ctx, req *CreateUserRequest) (*CreateUserResponse, *ErrorResponse) {
 		user := User{
 			ID:      1,
 			Name:    req.Name,
@@ -210,7 +210,7 @@ func TestDeeplyNestedStructs(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/deep", func(c *fiber.Ctx, req *DeepRequest) (*DeepResponse, *ErrorResponse) {
+	Post(oapi, "/deep", func(c fiber.Ctx, req *DeepRequest) (*DeepResponse, *ErrorResponse) {
 		return &DeepResponse{
 			Data:    req.Outer,
 			Success: true,
@@ -264,7 +264,7 @@ func TestArrayOfNestedStructs(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/items", func(c *fiber.Ctx, req *ListRequest) (*ListResponse, *ErrorResponse) {
+	Post(oapi, "/items", func(c fiber.Ctx, req *ListRequest) (*ListResponse, *ErrorResponse) {
 		return &ListResponse{
 			Items: req.Items,
 			Total: len(req.Items),

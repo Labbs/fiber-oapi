@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type Workspace struct {
@@ -27,7 +27,7 @@ func TestTimeTypeRendersAsDateTimeString(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/workspaces", func(c *fiber.Ctx, req *EmptyRequest) (*WorkspaceResponse, *ErrorResponse) {
+	Post(oapi, "/workspaces", func(c fiber.Ctx, req *EmptyRequest) (*WorkspaceResponse, *ErrorResponse) {
 		return &WorkspaceResponse{}, nil
 	}, OpenAPIOptions{
 		OperationID: "listWorkspaces",
@@ -87,7 +87,7 @@ func TestPointerTimeTypeRendersAsDateTimeString(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/events", func(c *fiber.Ctx, req *EmptyRequest) (*EventWithPointerTime, *ErrorResponse) {
+	Post(oapi, "/events", func(c fiber.Ctx, req *EmptyRequest) (*EventWithPointerTime, *ErrorResponse) {
 		return &EventWithPointerTime{}, nil
 	}, OpenAPIOptions{
 		OperationID: "createEvent",
@@ -129,7 +129,7 @@ func TestTimeTypeAsTopLevelHandlerRuntime(t *testing.T) {
 		OpenAPIDocsPath:   "/docs",
 	})
 
-	Post(oapi, "/timestamp", func(c *fiber.Ctx, req time.Time) (time.Time, *ErrorResponse) {
+	Post(oapi, "/timestamp", func(c fiber.Ctx, req time.Time) (time.Time, *ErrorResponse) {
 		return req, nil
 	}, OpenAPIOptions{OperationID: "echoTimestamp"})
 
@@ -160,7 +160,7 @@ func TestTimeTypeAsTopLevelInputAndOutput(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/timestamp", func(c *fiber.Ctx, req *time.Time) (*time.Time, *ErrorResponse) {
+	Post(oapi, "/timestamp", func(c fiber.Ctx, req *time.Time) (*time.Time, *ErrorResponse) {
 		return req, nil
 	}, OpenAPIOptions{
 		OperationID: "echoTimestamp",
@@ -217,11 +217,11 @@ func TestPrimitiveAndSliceTopLevelSchemasInline(t *testing.T) {
 		OpenAPIDocsPath:   "/docs",
 	})
 
-	Post(oapi, "/echo-string", func(c *fiber.Ctx, req string) (string, *ErrorResponse) {
+	Post(oapi, "/echo-string", func(c fiber.Ctx, req string) (string, *ErrorResponse) {
 		return req, nil
 	}, OpenAPIOptions{OperationID: "echoString"})
 
-	Post(oapi, "/echo-tags", func(c *fiber.Ctx, req []string) ([]string, *ErrorResponse) {
+	Post(oapi, "/echo-tags", func(c fiber.Ctx, req []string) ([]string, *ErrorResponse) {
 		return req, nil
 	}, OpenAPIOptions{OperationID: "echoTags"})
 
@@ -293,7 +293,7 @@ func TestTimeTypeAsTopLevelErrorBody(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/timestamp-error", func(c *fiber.Ctx, req *EmptyRequest) (*EmptyRequest, *time.Time) {
+	Post(oapi, "/timestamp-error", func(c fiber.Ctx, req *EmptyRequest) (*EmptyRequest, *time.Time) {
 		return &EmptyRequest{}, nil
 	}, OpenAPIOptions{
 		OperationID: "timestampError",

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +34,7 @@ func TestHeaderParameterBinding(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Get(oapi, "/test", func(c *fiber.Ctx, input HeaderTestInput) (HeaderTestOutput, HeaderTestError) {
+	Get(oapi, "/test", func(c fiber.Ctx, input HeaderTestInput) (HeaderTestOutput, HeaderTestError) {
 		return HeaderTestOutput{
 			RequestID: input.RequestID,
 			UserAgent: input.UserAgent,
@@ -69,7 +69,7 @@ func TestHeaderParameterValidation(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Get(oapi, "/test", func(c *fiber.Ctx, input HeaderTestInput) (HeaderTestOutput, HeaderTestError) {
+	Get(oapi, "/test", func(c fiber.Ctx, input HeaderTestInput) (HeaderTestOutput, HeaderTestError) {
 		return HeaderTestOutput{RequestID: input.RequestID}, HeaderTestError{}
 	}, OpenAPIOptions{
 		OperationID: "testHeaderValidation",
@@ -86,7 +86,7 @@ func TestHeaderParameterOpenAPIGeneration(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Get(oapi, "/test", func(c *fiber.Ctx, input HeaderTestInput) (HeaderTestOutput, HeaderTestError) {
+	Get(oapi, "/test", func(c fiber.Ctx, input HeaderTestInput) (HeaderTestOutput, HeaderTestError) {
 		return HeaderTestOutput{}, HeaderTestError{}
 	}, OpenAPIOptions{
 		OperationID: "testHeaderSpec",
@@ -150,7 +150,7 @@ func TestHeaderParameterWithPointerTypes(t *testing.T) {
 		RetryCount *int    `header:"x-retry-count"`
 	}
 
-	Get(oapi, "/test", func(c *fiber.Ctx, input PointerHeaderInput) (PointerHeaderOutput, struct{}) {
+	Get(oapi, "/test", func(c fiber.Ctx, input PointerHeaderInput) (PointerHeaderOutput, struct{}) {
 		out := PointerHeaderOutput{}
 		if input.TraceID != nil {
 			out.TraceID = *input.TraceID
@@ -236,7 +236,7 @@ func TestHeaderNotInRequestBody(t *testing.T) {
 		ID string `json:"id"`
 	}
 
-	Post(oapi, "/items", func(c *fiber.Ctx, input PostInputWithHeader) (PostOutput, struct{}) {
+	Post(oapi, "/items", func(c fiber.Ctx, input PostInputWithHeader) (PostOutput, struct{}) {
 		return PostOutput{ID: "1"}, struct{}{}
 	}, OpenAPIOptions{
 		OperationID: "createItem",
@@ -296,7 +296,7 @@ func TestHeaderTakesPriorityOverBody(t *testing.T) {
 		Name      string `json:"name"`
 	}
 
-	Post(oapi, "/test", func(c *fiber.Ctx, input PriorityInput) (PriorityOutput, struct{}) {
+	Post(oapi, "/test", func(c fiber.Ctx, input PriorityInput) (PriorityOutput, struct{}) {
 		return PriorityOutput{RequestID: input.RequestID, Name: input.Name}, struct{}{}
 	}, OpenAPIOptions{
 		OperationID: "testPriority",
@@ -325,7 +325,7 @@ func TestHeaderMixedWithPathAndQuery(t *testing.T) {
 	oapi := New(app)
 
 	type MixedInput struct {
-		ID        string `path:"id" validate:"required"`
+		ID        string `uri:"id" validate:"required"`
 		Filter    string `query:"filter"`
 		RequestID string `header:"x-request-id" validate:"required"`
 	}
@@ -336,7 +336,7 @@ func TestHeaderMixedWithPathAndQuery(t *testing.T) {
 		RequestID string `json:"requestId"`
 	}
 
-	Get(oapi, "/items/:id", func(c *fiber.Ctx, input MixedInput) (MixedOutput, struct{}) {
+	Get(oapi, "/items/:id", func(c fiber.Ctx, input MixedInput) (MixedOutput, struct{}) {
 		return MixedOutput{
 			ID:        input.ID,
 			Filter:    input.Filter,

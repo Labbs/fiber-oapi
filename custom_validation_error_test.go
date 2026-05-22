@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +25,7 @@ func TestCustomValidationErrorHandler(t *testing.T) {
 	oapi := New(app, Config{
 		EnableValidation:  true,
 		EnableOpenAPIDocs: false,
-		ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+		ValidationErrorHandler: func(c fiber.Ctx, err error) error {
 			return c.Status(fiber.StatusBadRequest).JSON(CustomValidationError{
 				Success: false,
 				Message: err.Error(),
@@ -46,7 +46,7 @@ func TestCustomValidationErrorHandler(t *testing.T) {
 	Post[TestInput, TestOutput, struct{}](
 		oapi,
 		"/test",
-		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+		func(c fiber.Ctx, input TestInput) (TestOutput, struct{}) {
 			return TestOutput{Message: "success"}, struct{}{}
 		},
 		OpenAPIOptions{},
@@ -96,7 +96,7 @@ func TestDefaultValidationErrorWhenNoCustomHandler(t *testing.T) {
 	Post[TestInput, TestOutput, struct{}](
 		oapi,
 		"/test",
-		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+		func(c fiber.Ctx, input TestInput) (TestOutput, struct{}) {
 			return TestOutput{Message: "success"}, struct{}{}
 		},
 		OpenAPIOptions{},
@@ -131,7 +131,7 @@ func TestCustomValidationErrorHandlerWithDisabledDocs(t *testing.T) {
 	oapi := New(app, Config{
 		EnableValidation:  true,
 		EnableOpenAPIDocs: false, // This should be respected
-		ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+		ValidationErrorHandler: func(c fiber.Ctx, err error) error {
 			return c.Status(fiber.StatusBadRequest).JSON(CustomValidationError{
 				Success: false,
 				Message: err.Error(),
@@ -151,7 +151,7 @@ func TestCustomValidationErrorHandlerWithDisabledDocs(t *testing.T) {
 	Post[TestInput, TestOutput, struct{}](
 		oapi,
 		"/test",
-		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+		func(c fiber.Ctx, input TestInput) (TestOutput, struct{}) {
 			return TestOutput{Message: "success"}, struct{}{}
 		},
 		OpenAPIOptions{},
@@ -189,7 +189,7 @@ func TestValidationErrorHandlerImpliesValidationEnabled(t *testing.T) {
 	// Configure ONLY ValidationErrorHandler without explicitly setting EnableValidation
 	// This should keep validation enabled by default since it makes sense
 	oapi := New(app, Config{
-		ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+		ValidationErrorHandler: func(c fiber.Ctx, err error) error {
 			return c.Status(fiber.StatusBadRequest).JSON(CustomValidationError{
 				Success: false,
 				Message: err.Error(),
@@ -209,7 +209,7 @@ func TestValidationErrorHandlerImpliesValidationEnabled(t *testing.T) {
 	Post[TestInput, TestOutput, struct{}](
 		oapi,
 		"/test",
-		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+		func(c fiber.Ctx, input TestInput) (TestOutput, struct{}) {
 			return TestOutput{Message: "success"}, struct{}{}
 		},
 		OpenAPIOptions{},
@@ -262,7 +262,7 @@ func TestAuthErrorHandlerOnlyDoesNotDisableDefaults(t *testing.T) {
 	app := fiber.New()
 
 	oapi := New(app, Config{
-		AuthErrorHandler: func(c *fiber.Ctx, err *AuthError) error {
+		AuthErrorHandler: func(c fiber.Ctx, err *AuthError) error {
 			return c.Status(err.StatusCode).JSON(fiber.Map{"custom": true})
 		},
 	})
@@ -277,7 +277,7 @@ func TestAuthErrorHandlerOnlyDoesNotDisableDefaults(t *testing.T) {
 	Post[TestInput, TestOutput, struct{}](
 		oapi,
 		"/test",
-		func(c *fiber.Ctx, input TestInput) (TestOutput, struct{}) {
+		func(c fiber.Ctx, input TestInput) (TestOutput, struct{}) {
 			return TestOutput{Message: "ok"}, struct{}{}
 		},
 		OpenAPIOptions{},

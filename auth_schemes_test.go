@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // --- Mock services ---
@@ -149,7 +149,7 @@ func TestValidateBasicAuth_ValidCredentials(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockBasicAuthService()
 	app.Use(BasicAuthMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -170,7 +170,7 @@ func TestValidateBasicAuth_InvalidCredentials(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockBasicAuthService()
 	app.Use(BasicAuthMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -190,7 +190,7 @@ func TestValidateBasicAuth_MalformedBase64(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockBasicAuthService()
 	app.Use(BasicAuthMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -209,7 +209,7 @@ func TestValidateBasicAuth_MissingColon(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockBasicAuthService()
 	app.Use(BasicAuthMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -229,7 +229,7 @@ func TestValidateBasicAuth_MissingHeader(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockBasicAuthService()
 	app.Use(BasicAuthMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -248,7 +248,7 @@ func TestValidateBasicAuth_ServiceDoesNotImplement(t *testing.T) {
 	// Use plain MockAuthService which does NOT implement BasicAuthValidator
 	authService := NewMockAuthService()
 	app.Use(BasicAuthMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -271,7 +271,7 @@ func TestValidateAPIKey_InHeader_Valid(t *testing.T) {
 	authService := NewMockAPIKeyAuthService()
 	scheme := SecurityScheme{Type: "apiKey", In: "header", Name: "X-API-Key"}
 	app.Use(APIKeyMiddleware(authService, scheme))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -292,7 +292,7 @@ func TestValidateAPIKey_InQuery_Valid(t *testing.T) {
 	authService := NewMockAPIKeyAuthService()
 	scheme := SecurityScheme{Type: "apiKey", In: "query", Name: "api_key"}
 	app.Use(APIKeyMiddleware(authService, scheme))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -312,7 +312,7 @@ func TestValidateAPIKey_InCookie_Valid(t *testing.T) {
 	authService := NewMockAPIKeyAuthService()
 	scheme := SecurityScheme{Type: "apiKey", In: "cookie", Name: "api_key"}
 	app.Use(APIKeyMiddleware(authService, scheme))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -333,7 +333,7 @@ func TestValidateAPIKey_Missing(t *testing.T) {
 	authService := NewMockAPIKeyAuthService()
 	scheme := SecurityScheme{Type: "apiKey", In: "header", Name: "X-API-Key"}
 	app.Use(APIKeyMiddleware(authService, scheme))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -352,7 +352,7 @@ func TestValidateAPIKey_Invalid(t *testing.T) {
 	authService := NewMockAPIKeyAuthService()
 	scheme := SecurityScheme{Type: "apiKey", In: "header", Name: "X-API-Key"}
 	app.Use(APIKeyMiddleware(authService, scheme))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -372,7 +372,7 @@ func TestValidateAPIKey_ServiceDoesNotImplement(t *testing.T) {
 	authService := NewMockAuthService()
 	scheme := SecurityScheme{Type: "apiKey", In: "header", Name: "X-API-Key"}
 	app.Use(APIKeyMiddleware(authService, scheme))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -393,7 +393,7 @@ func TestValidateAWSSigV4_ValidSignature(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAWSAuthService()
 	app.Use(AWSSignatureMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -415,7 +415,7 @@ func TestValidateAWSSigV4_InvalidAccessKey(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAWSAuthService()
 	app.Use(AWSSignatureMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -434,7 +434,7 @@ func TestValidateAWSSigV4_MalformedHeader(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAWSAuthService()
 	app.Use(AWSSignatureMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -453,7 +453,7 @@ func TestValidateAWSSigV4_MissingHeader(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAWSAuthService()
 	app.Use(AWSSignatureMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -471,7 +471,7 @@ func TestValidateAWSSigV4_ServiceDoesNotImplement(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
 	app.Use(AWSSignatureMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -554,7 +554,7 @@ func TestMultiScheme_BearerStillWorks(t *testing.T) {
 		},
 	}
 	app.Use(MultiSchemeAuthMiddleware(authService, config))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -584,7 +584,7 @@ func TestMultiScheme_FallbackToSecondScheme(t *testing.T) {
 		},
 	}
 	app.Use(MultiSchemeAuthMiddleware(authService, config))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -615,7 +615,7 @@ func TestMultiScheme_AllSchemesFail(t *testing.T) {
 		},
 	}
 	app.Use(MultiSchemeAuthMiddleware(authService, config))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "should not reach here"})
 	})
 
@@ -645,7 +645,7 @@ func TestBackwardCompat_ExistingMockAuthService(t *testing.T) {
 		// No SecuritySchemes configured - should fallback to Bearer-only
 	})
 
-	Get(oapi, "/test", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/test", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		authCtx, err := GetAuthContext(c)
 		if err != nil {
 			return nil, &ErrorResponse{Code: 500, Details: err.Error()}
@@ -669,7 +669,7 @@ func TestBackwardCompat_BearerTokenMiddleware(t *testing.T) {
 	app := fiber.New()
 	authService := NewMockAuthService()
 	app.Use(BearerTokenMiddleware(authService))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
@@ -703,11 +703,11 @@ func TestSmartAuthMiddleware_WithSecuritySchemes(t *testing.T) {
 		},
 	}
 	app.Use(SmartAuthMiddleware(authService, config))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, _ := GetAuthContext(c)
 		return c.JSON(fiber.Map{"user_id": authCtx.UserID})
 	})
-	app.Get("/docs", func(c *fiber.Ctx) error {
+	app.Get("/docs", func(c fiber.Ctx) error {
 		return c.SendString("docs")
 	})
 
@@ -750,7 +750,7 @@ func TestValidateSecurityRequirement_ANDMergesContexts(t *testing.T) {
 		"apiKey":     {},
 	}
 
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		authCtx, err := validateSecurityRequirement(c, requirement, schemes, authService)
 		if err != nil {
 			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
@@ -841,7 +841,7 @@ func TestValidateSecurityRequirement_ANDConflictingUserID(t *testing.T) {
 		"apiKey":     {},
 	}
 
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		_, err := validateSecurityRequirement(c, requirement, schemes, authService)
 		if err != nil {
 			return c.Status(401).JSON(fiber.Map{"error": err.Error()})
@@ -875,7 +875,7 @@ func TestValidateAPIKey_UnsupportedLocation(t *testing.T) {
 		},
 	}
 	app.Use(MultiSchemeAuthMiddleware(authService, config))
-	app.Get("/test", func(c *fiber.Ctx) error {
+	app.Get("/test", func(c fiber.Ctx) error {
 		return c.SendStatus(200)
 	})
 
@@ -913,7 +913,7 @@ func TestPerRouteSecurity_OverridesGlobalDefault(t *testing.T) {
 	routeSecurity := []map[string][]string{
 		{"apiKey": {}},
 	}
-	Get(oapi, "/api-key-route", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/api-key-route", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		authCtx, err := GetAuthContext(c)
 		if err != nil {
 			return nil, &ErrorResponse{Code: 500, Details: err.Error()}
@@ -957,7 +957,7 @@ func TestSecurityScheme_YAMLSpec_CorrectKeys(t *testing.T) {
 	})
 
 	// Register a dummy route so the spec is non-empty
-	Get(oapi, "/ping", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/ping", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, OpenAPIOptions{Summary: "Ping"})
 

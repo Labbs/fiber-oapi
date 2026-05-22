@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Test structs pour PUT
 type PutUserInput struct {
-	ID       string `path:"id" validate:"required"`
+	ID       string `uri:"id" validate:"required"`
 	Username string `json:"username" validate:"omitempty,min=3,max=20,alphanum"`
 	Email    string `json:"email" validate:"omitempty,email"`
 	Age      int    `json:"age" validate:"omitempty,min=13,max=120"`
@@ -20,8 +20,8 @@ type PutUserInput struct {
 }
 
 type PutProductInput struct {
-	CategoryID  string   `path:"categoryId" validate:"required,uuid4"`
-	ProductID   string   `path:"productId" validate:"required,uuid4"`
+	CategoryID  string   `uri:"categoryId" validate:"required,uuid4"`
+	ProductID   string   `uri:"productId" validate:"required,uuid4"`
 	Name        string   `json:"name" validate:"omitempty,min=2,max=100"`
 	Description string   `json:"description" validate:"omitempty,max=1000"`
 	Price       float64  `json:"price" validate:"omitempty,min=0"`
@@ -47,7 +47,7 @@ func TestPutOApi_SimplePut(t *testing.T) {
 	oapi := New(app)
 
 	// Test with simple PUT (path param + JSON body)
-	Put(oapi, "/users/:id", func(c *fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
+	Put(oapi, "/users/:id", func(c fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
 		return PutOutput{
 			ID:      input.ID,
 			Message: fmt.Sprintf("User %s updated successfully", input.ID),
@@ -95,7 +95,7 @@ func TestPutOApi_MultiplePathParams(t *testing.T) {
 	oapi := New(app)
 
 	// Test with PUT + multiple path parameters
-	Put(oapi, "/categories/:categoryId/products/:productId", func(c *fiber.Ctx, input PutProductInput) (PutOutput, PutError) {
+	Put(oapi, "/categories/:categoryId/products/:productId", func(c fiber.Ctx, input PutProductInput) (PutOutput, PutError) {
 		return PutOutput{
 			ID:      input.ProductID,
 			Message: fmt.Sprintf("Product %s updated in category %s", input.ProductID, input.CategoryID),
@@ -144,7 +144,7 @@ func TestPutOApi_Validation(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Put(oapi, "/users/:id", func(c *fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
+	Put(oapi, "/users/:id", func(c fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
 		return PutOutput{
 			ID:      input.ID,
 			Message: "User updated",
@@ -263,7 +263,7 @@ func TestPutOApi_ErrorHandling(t *testing.T) {
 	oapi := New(app)
 
 	// Test with custom error handling
-	Put(oapi, "/users/:id", func(c *fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
+	Put(oapi, "/users/:id", func(c fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
 		if input.ID == "notfound" {
 			return PutOutput{}, PutError{
 				StatusCode: 404,
@@ -374,7 +374,7 @@ func TestPutOApi_OperationStorage(t *testing.T) {
 	// Check that PUT operations are properly stored
 	initialCount := len(oapi.operations)
 
-	Put(oapi, "/test/:id", func(c *fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
+	Put(oapi, "/test/:id", func(c fiber.Ctx, input PutUserInput) (PutOutput, PutError) {
 		return PutOutput{Message: "test", Updated: true}, PutError{}
 	}, OpenAPIOptions{
 		OperationID: "test-put-operation",

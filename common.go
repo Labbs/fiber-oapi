@@ -2,13 +2,14 @@ package fiberoapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Global validator instance
@@ -18,113 +19,93 @@ func init() {
 	validate = validator.New()
 }
 
-// Function to parse input from the request
-// parseInput parses the input from the request
-func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *OpenAPIOptions) (TInput, error) {
+// inputShape caches per-type metadata used at request time so we avoid
+// re-introspecting the input struct on every request. Built once via sync.OnceValue.
+type inputShape struct {
+	// isStruct is true when the request input is a (possibly pointer-to) struct,
+	// i.e. eligible for URI/Query/Header binding.
+	isStruct bool
+}
+
+var shapeCache sync.Map // map[reflect.Type]*inputShape
+
+// shapeFor returns the cached inputShape for T, computing it lazily once.
+func shapeFor[TInput any]() *inputShape {
+	var zero TInput
+	t := reflect.TypeOf(zero)
+	if cached, ok := shapeCache.Load(t); ok {
+		return cached.(*inputShape)
+	}
+	s := &inputShape{
+		isStruct: t != nil && dereferenceType(t).Kind() == reflect.Struct,
+	}
+	actual, _ := shapeCache.LoadOrStore(t, s)
+	return actual.(*inputShape)
+}
+
+// parseInput parses the input from the request, delegating URI / Query / Header /
+// Body extraction to Fiber's Bind (which caches its own per-type schema). Per-type
+// shape metadata is cached locally to avoid re-running reflection on every request.
+func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *OpenAPIOptions) (TInput, error) {
 	var input TInput
 
-	// Parse path parameters if needed
-	err := parsePathParams(c, &input)
-	if err != nil {
-		return input, err
+	shape := shapeFor[TInput]()
+
+	if shape.isStruct {
+		if err := c.Bind().URI(&input); err != nil {
+			return input, err
+		}
+		if err := c.Bind().Query(&input); err != nil {
+			return input, err
+		}
 	}
 
-	// Parse query parameters
-	err = parseQueryParams(c, &input)
-	if err != nil {
-		return input, err
-	}
-
-	// Parse body for POST/PUT methods only if there's content
+	// Parse body for POST/PUT/PATCH methods only if there's content.
+	// Body is parsed before headers so that header values take priority over any
+	// field that the JSON decoder may have populated (e.g. when a header-bound
+	// field is also sent in the body without a json:"-" tag).
 	method := c.Method()
 	if method == "POST" || method == "PUT" || method == "PATCH" {
-		// Check if there's content in the body
 		bodyLength := len(c.Body())
 		contentType := c.Get("Content-Type")
 
-		// Parse the body if there's content OR if it's a POST/PUT/PATCH with specified Content-Type
 		if bodyLength > 0 || strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
-			err = c.BodyParser(&input)
-			if err != nil {
-				// For POST requests without a body, ignore the parsing error
+			if err := c.Bind().Body(&input); err != nil {
+				// For POST without a body, tolerate the parsing failure
 				if bodyLength == 0 && method == "POST" {
-					// It's OK, the POST has no body - ignore the error
+					// no-op
+				} else if friendly := translateJSONError(err); friendly != nil {
+					return input, friendly
 				} else {
-					// Transform JSON unmarshal type errors into readable validation errors
-					errMsg := err.Error()
-
-					// Check if error message contains unmarshal type error pattern
-					if strings.Contains(errMsg, "json: cannot unmarshal") && strings.Contains(errMsg, "into Go struct field") {
-						// Parse the error message to extract field name and type info
-						// Format: "json: cannot unmarshal <type> into Go struct field <StructName>.<Field> of type <GoType>"
-						parts := strings.Split(errMsg, "into Go struct field ")
-						if len(parts) == 2 {
-							afterField := parts[1]
-							fieldParts := strings.Split(afterField, " of type ")
-							if len(fieldParts) == 2 {
-								// Extract field name (after the last dot)
-								fullFieldName := fieldParts[0]
-								fieldNameParts := strings.Split(fullFieldName, ".")
-								fieldName := fieldNameParts[len(fieldNameParts)-1]
-
-								// Extract expected type and trim whitespace
-								expectedType := strings.TrimSpace(fieldParts[1])
-
-								// Extract actual type from the first part and trim whitespace
-								typePart := strings.TrimSpace(strings.TrimPrefix(parts[0], "json: cannot unmarshal "))
-
-								return input, fmt.Errorf("invalid type for field '%s': expected %s but got %s",
-									fieldName, expectedType, typePart)
-							}
-						}
-					} else if strings.Contains(errMsg, "json: slice") || strings.Contains(errMsg, "json: map") {
-						// Handle "json: slice unexpected end of JSON input" and similar errors
-						// This happens when sending wrong type for slice/map fields
-						// Try to identify which field caused the error by parsing the request body
-						fieldName, expectedType, actualType := detectTypeMismatchFromBody(c.Body(), input)
-						if fieldName != "" {
-							return input, fmt.Errorf("invalid type for field '%s': expected %s but got %s",
-								fieldName, expectedType, actualType)
-						}
-						// Fallback to generic message if we can't identify the field
-						return input, fmt.Errorf("invalid JSON: expected array or object but got incompatible type")
-					}
-
-					// Return original error if no pattern matched
 					return input, err
 				}
 			}
 		}
 	}
 
-	// Parse header parameters after body parsing so headers always take priority
-	// over any values that c.BodyParser may have set via Go field name matching
-	err = parseHeaderParams(c, &input)
-	if err != nil {
-		return input, err
+	if shape.isStruct {
+		if err := c.Bind().Header(&input); err != nil {
+			return input, err
+		}
 	}
 
 	// Validate input if enabled in configuration
 	if app.Config().EnableValidation {
-		err = validate.Struct(input)
-		if err != nil {
+		if err := validate.Struct(input); err != nil {
 			return input, err
 		}
 	}
 
 	// Validate authorization if enabled in configuration and not disabled for this route
 	if app.Config().EnableAuthorization && options != nil {
-		// Check if security is explicitly disabled for this route
 		if securityValue, ok := options.Security.(string); ok && securityValue == "disabled" {
 			// Skip authorization for this route
 		} else {
 			cfg := app.Config()
-			// Use per-route security requirements when specified, otherwise fall back to global defaults
 			if routeSecurity, ok := options.Security.([]map[string][]string); ok && len(routeSecurity) > 0 {
 				cfg.DefaultSecurity = routeSecurity
 			}
-			err = validateAuthorization(c, input, cfg.AuthService, &cfg, options.RequiredRoles, options.RequireAllRoles)
-			if err != nil {
+			if err := validateAuthorization(c, input, cfg.AuthService, &cfg, options.RequiredRoles, options.RequireAllRoles); err != nil {
 				return input, err
 			}
 		}
@@ -133,8 +114,26 @@ func parseInput[TInput any](app *OApiApp, c *fiber.Ctx, path string, options *Op
 	return input, nil
 }
 
+// translateJSONError converts low-level json decoder errors into a stable,
+// user-facing validation message. Returns nil if err is not a JSON type mismatch.
+func translateJSONError(err error) error {
+	ute, ok := errors.AsType[*json.UnmarshalTypeError](err)
+	if !ok {
+		return nil
+	}
+	fieldName := ute.Field
+	if i := strings.LastIndex(fieldName, "."); i >= 0 {
+		fieldName = fieldName[i+1:]
+	}
+	if fieldName == "" {
+		return fmt.Errorf("invalid JSON: expected %s but got %s", ute.Type.String(), ute.Value)
+	}
+	return fmt.Errorf("invalid type for field '%s': expected %s but got %s",
+		fieldName, ute.Type.String(), ute.Value)
+}
+
 // Function to handle custom errors
-func handleCustomError(c *fiber.Ctx, customErr interface{}) error {
+func handleCustomError(c fiber.Ctx, customErr interface{}) error {
 	// Use reflection to extract error information
 	errValue := reflect.ValueOf(customErr)
 
@@ -172,146 +171,6 @@ func isZero(v interface{}) bool {
 	return reflect.ValueOf(v).IsZero()
 }
 
-// Parse path parameters
-func parsePathParams(c *fiber.Ctx, input interface{}) error {
-	inputValue := reflect.ValueOf(input).Elem()
-	inputType := dereferenceType(reflect.TypeOf(input).Elem())
-
-	if inputType.Kind() != reflect.Struct {
-		return nil
-	}
-	if inputValue.Kind() == reflect.Ptr {
-		if inputValue.IsNil() {
-			return nil
-		}
-		inputValue = inputValue.Elem()
-	}
-
-	for i := 0; i < inputType.NumField(); i++ {
-		field := inputType.Field(i)
-		if pathTag := field.Tag.Get("path"); pathTag != "" {
-			paramValue := c.Params(pathTag)
-			if paramValue != "" {
-				fieldValue := inputValue.Field(i)
-				if fieldValue.CanSet() && fieldValue.Kind() == reflect.String {
-					fieldValue.SetString(paramValue)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// Parse query parameters
-func parseQueryParams(c *fiber.Ctx, input interface{}) error {
-	inputValue := reflect.ValueOf(input).Elem()
-	inputType := dereferenceType(reflect.TypeOf(input).Elem())
-
-	if inputType.Kind() != reflect.Struct {
-		return nil
-	}
-	if inputValue.Kind() == reflect.Ptr {
-		if inputValue.IsNil() {
-			return nil
-		}
-		inputValue = inputValue.Elem()
-	}
-
-	for i := 0; i < inputType.NumField(); i++ {
-		field := inputType.Field(i)
-		if queryTag := field.Tag.Get("query"); queryTag != "" {
-			queryValue := c.Query(queryTag)
-			if queryValue != "" {
-				fieldValue := inputValue.Field(i)
-				if fieldValue.CanSet() {
-					if err := setFieldValue(fieldValue, queryValue); err != nil {
-						return fmt.Errorf("failed to parse query param %s: %w", queryTag, err)
-					}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// Parse header parameters
-func parseHeaderParams(c *fiber.Ctx, input interface{}) error {
-	inputValue := reflect.ValueOf(input).Elem()
-	inputType := dereferenceType(reflect.TypeOf(input).Elem())
-
-	if inputType.Kind() != reflect.Struct {
-		return nil
-	}
-	if inputValue.Kind() == reflect.Ptr {
-		if inputValue.IsNil() {
-			return nil
-		}
-		inputValue = inputValue.Elem()
-	}
-
-	for i := 0; i < inputType.NumField(); i++ {
-		field := inputType.Field(i)
-		if headerTag := field.Tag.Get("header"); headerTag != "" {
-			headerValue := c.Get(headerTag)
-			if headerValue != "" {
-				fieldValue := inputValue.Field(i)
-				if fieldValue.CanSet() {
-					if err := setFieldValue(fieldValue, headerValue); err != nil {
-						return fmt.Errorf("failed to parse header param %s: %w", headerTag, err)
-					}
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// Helper function to set field values with type conversion
-func setFieldValue(fieldValue reflect.Value, value string) error {
-	// Handle pointer types: allocate and recurse into the pointed-to value
-	if fieldValue.Kind() == reflect.Ptr {
-		if fieldValue.IsNil() {
-			fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
-		}
-		return setFieldValue(fieldValue.Elem(), value)
-	}
-
-	switch fieldValue.Kind() {
-	case reflect.String:
-		fieldValue.SetString(value)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if intVal, err := strconv.ParseInt(value, 10, 64); err != nil {
-			return err
-		} else {
-			fieldValue.SetInt(intVal)
-		}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if uintVal, err := strconv.ParseUint(value, 10, 64); err != nil {
-			return err
-		} else {
-			fieldValue.SetUint(uintVal)
-		}
-	case reflect.Float32, reflect.Float64:
-		if floatVal, err := strconv.ParseFloat(value, fieldValue.Type().Bits()); err != nil {
-			return err
-		} else {
-			fieldValue.SetFloat(floatVal)
-		}
-	case reflect.Bool:
-		if boolVal, err := strconv.ParseBool(value); err != nil {
-			return err
-		} else {
-			fieldValue.SetBool(boolVal)
-		}
-	default:
-		return fmt.Errorf("unsupported field type: %s", fieldValue.Kind())
-	}
-	return nil
-}
-
 // Validate that struct parameters match the path
 func validatePathParams[T any](path string) error {
 	var zero T
@@ -339,9 +198,9 @@ func validatePathParams[T any](path string) error {
 			continue
 		}
 
-		if pathTag := field.Tag.Get("path"); pathTag != "" {
-			if !contains(pathParams, pathTag) {
-				return fmt.Errorf("field %s has path tag '%s' but parameter is not in path %s", field.Name, pathTag, path)
+		if uriTag := field.Tag.Get("uri"); uriTag != "" {
+			if !contains(pathParams, uriTag) {
+				return fmt.Errorf("field %s has uri tag '%s' but parameter is not in path %s", field.Name, uriTag, path)
 			}
 		}
 	}
@@ -405,13 +264,11 @@ func extractParametersFromStruct(inputType reflect.Type) []map[string]interface{
 			continue
 		}
 
-		// Process path parameters
-		if pathTag := field.Tag.Get("path"); pathTag != "" {
-			// Path parameters are always required regardless of type or validation tags.
-			// This follows OpenAPI 3.0 specification where path parameters must be required,
-			// and is enforced here by explicitly setting "required": true at line 289.
+		// Process path parameters (Fiber v3 binding tag is "uri")
+		if uriTag := field.Tag.Get("uri"); uriTag != "" {
+			// Path parameters are always required per OpenAPI 3.0.
 			param := map[string]interface{}{
-				"name":        pathTag,
+				"name":        uriTag,
 				"in":          "path",
 				"required":    true,
 				"description": getFieldDescription(field, "Path parameter"),

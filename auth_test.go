@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Mock AuthorizationService for testing
@@ -135,11 +135,11 @@ func (m *MockAuthService) GetUserPermissions(ctx *AuthContext, resourceType, res
 
 // Test structures
 type TestRequest struct {
-	ID string `path:"id" validate:"required"`
+	ID string `uri:"id" validate:"required"`
 }
 
 type TestRequestWithAuth struct {
-	ID         string `path:"id" validate:"required"`
+	ID         string `uri:"id" validate:"required"`
 	ResourceID string `resource:"document" action:"read"`
 }
 
@@ -177,7 +177,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 
 	t.Run("Public endpoint without auth", func(t *testing.T) {
 		Get(oapi, "/public",
-			func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
+			func(c fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 				return TestResponse{
 					ID:      "public",
 					Message: "This is public",
@@ -202,7 +202,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 
 	t.Run("Protected endpoint without token", func(t *testing.T) {
 		Get(oapi, "/protected",
-			func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
+			func(c fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 				return TestResponse{
 					ID:      "protected",
 					Message: "This is protected",
@@ -226,7 +226,7 @@ func TestAuthenticationMiddleware(t *testing.T) {
 
 	t.Run("Protected endpoint with valid token", func(t *testing.T) {
 		Get(oapi, "/user-info",
-			func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
+			func(c fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 				authCtx, _ := GetAuthContext(c)
 				return TestResponse{
 					ID:      authCtx.UserID,
@@ -300,7 +300,7 @@ func TestRoleBasedAccess(t *testing.T) {
 
 	// Endpoint requiring admin role
 	Delete(oapi, "/admin/:id",
-		func(c *fiber.Ctx, input TestRequest) (TestResponse, *ErrorResponse) {
+		func(c fiber.Ctx, input TestRequest) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)
 
 			// Check admin role manually in handler
@@ -364,8 +364,8 @@ func TestScopeBasedAccess(t *testing.T) {
 
 	// Endpoint requiring write scope
 	Put(oapi, "/documents/:id",
-		func(c *fiber.Ctx, input struct {
-			ID   string `path:"id" validate:"required"`
+		func(c fiber.Ctx, input struct {
+			ID   string `uri:"id" validate:"required"`
 			Name string `json:"name" validate:"required"`
 		}) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)
@@ -437,7 +437,7 @@ func TestPOSTWithoutBody(t *testing.T) {
 
 	// POST endpoint without body (like share)
 	Post(oapi, "/documents/:id/share",
-		func(c *fiber.Ctx, input TestRequest) (TestResponse, *ErrorResponse) {
+		func(c fiber.Ctx, input TestRequest) (TestResponse, *ErrorResponse) {
 			authCtx, _ := GetAuthContext(c)
 
 			return TestResponse{
@@ -488,7 +488,7 @@ func TestGetAuthContext(t *testing.T) {
 	oapi := New(app, config)
 
 	Get(oapi, "/context-test",
-		func(c *fiber.Ctx, input struct{}) (map[string]interface{}, *ErrorResponse) {
+		func(c fiber.Ctx, input struct{}) (map[string]interface{}, *ErrorResponse) {
 			authCtx, err := GetAuthContext(c)
 			if err != nil {
 				return nil, &ErrorResponse{
@@ -549,7 +549,7 @@ func TestAuthServiceFailure(t *testing.T) {
 	oapi := New(app, config)
 
 	Get(oapi, "/fail-test",
-		func(c *fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
+		func(c fiber.Ctx, input struct{}) (TestResponse, *ErrorResponse) {
 			return TestResponse{
 				ID:      "test",
 				Message: "Should not reach here",
@@ -593,22 +593,22 @@ func TestRequiredRoles(t *testing.T) {
 	})
 
 	// Route requiring "admin" role
-	Get(oapi, "/admin/users", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/admin/users", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, WithRoles(OpenAPIOptions{Summary: "Admin only"}, "admin"))
 
 	// Route requiring "user" role (both tokens have this)
-	Get(oapi, "/user/profile", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/user/profile", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, WithRoles(OpenAPIOptions{Summary: "User profile"}, "user"))
 
 	// Route requiring multiple roles (OR semantics): "admin" OR "editor"
-	Get(oapi, "/admin/settings", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/admin/settings", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, WithRoles(OpenAPIOptions{Summary: "Admin settings"}, "admin", "editor"))
 
 	// Route with no required roles
-	Get(oapi, "/public/info", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/public/info", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, OpenAPIOptions{Summary: "Public info"})
 
@@ -742,7 +742,7 @@ func TestCustomAuthErrorHandler(t *testing.T) {
 		DefaultSecurity: []map[string][]string{
 			{"bearerAuth": {}},
 		},
-		AuthErrorHandler: func(c *fiber.Ctx, err *AuthError) error {
+		AuthErrorHandler: func(c fiber.Ctx, err *AuthError) error {
 			return c.Status(err.StatusCode).JSON(fiber.Map{
 				"custom":  true,
 				"message": err.Message,
@@ -751,7 +751,7 @@ func TestCustomAuthErrorHandler(t *testing.T) {
 		},
 	})
 
-	Get(oapi, "/protected", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/protected", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, OpenAPIOptions{Summary: "Protected"})
 
@@ -771,7 +771,7 @@ func TestCustomAuthErrorHandler(t *testing.T) {
 	})
 
 	t.Run("custom handler for 403", func(t *testing.T) {
-		Get(oapi, "/admin-only", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+		Get(oapi, "/admin-only", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 			return fiber.Map{"ok": true}, nil
 		}, WithRoles(OpenAPIOptions{Summary: "Admin only"}, "admin"))
 
@@ -843,7 +843,7 @@ func TestRequiredRoles_ANDSemantics(t *testing.T) {
 	})
 
 	// Route requiring ALL of "admin" AND "user" (AND semantics)
-	Get(oapi, "/strict", func(c *fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
+	Get(oapi, "/strict", func(c fiber.Ctx, input struct{}) (fiber.Map, *ErrorResponse) {
 		return fiber.Map{"ok": true}, nil
 	}, WithAllRoles(OpenAPIOptions{Summary: "Strict route"}, "admin", "user"))
 

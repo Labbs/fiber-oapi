@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Test structs pour POST
@@ -19,14 +19,14 @@ type PostUserInput struct {
 }
 
 type PostUserWithPathInput struct {
-	GroupID  string `path:"groupId" validate:"required,uuid4"`
+	GroupID  string `uri:"groupId" validate:"required,uuid4"`
 	Username string `json:"username" validate:"required,min=3,max=20"`
 	Email    string `json:"email" validate:"required,email"`
 	Role     string `json:"role" validate:"required,oneof=member admin"`
 }
 
 type PostProductInput struct {
-	CategoryID  string   `path:"categoryId" validate:"required,uuid4"`
+	CategoryID  string   `uri:"categoryId" validate:"required,uuid4"`
 	Name        string   `json:"name" validate:"required,min=2,max=100"`
 	Description string   `json:"description" validate:"omitempty,max=1000"`
 	Price       float64  `json:"price" validate:"required,min=0"`
@@ -51,7 +51,7 @@ func TestPostOApi_SimplePost(t *testing.T) {
 	oapi := New(app)
 
 	// Test with simple POST (JSON body only)
-	Post(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/users", func(c fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		return PostOutput{
 			ID:      "user_123",
 			Message: fmt.Sprintf("User %s created successfully", input.Username),
@@ -95,7 +95,7 @@ func TestPostOApi_WithPathParams(t *testing.T) {
 	oapi := New(app)
 
 	// Test with POST + path parameters
-	Post(oapi, "/groups/:groupId/users", func(c *fiber.Ctx, input PostUserWithPathInput) (PostOutput, PostError) {
+	Post(oapi, "/groups/:groupId/users", func(c fiber.Ctx, input PostUserWithPathInput) (PostOutput, PostError) {
 		return PostOutput{
 			ID:      "user_456",
 			Message: fmt.Sprintf("User %s added to group %s", input.Username, input.GroupID),
@@ -138,7 +138,7 @@ func TestPostOApi_Validation(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Post(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/users", func(c fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		return PostOutput{
 			ID:      "user_789",
 			Message: "User created",
@@ -243,7 +243,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 
 	// Test with complex validation (arrays, nested validation)
 	Post(oapi, "/categories/:categoryId/products",
-		func(c *fiber.Ctx, input PostProductInput) (PostOutput, PostError) {
+		func(c fiber.Ctx, input PostProductInput) (PostOutput, PostError) {
 			return PostOutput{
 				ID:      "product_999",
 				Message: fmt.Sprintf("Product %s created in category %s", input.Name, input.CategoryID),
@@ -355,7 +355,7 @@ func TestPostOApi_ErrorHandling(t *testing.T) {
 	oapi := New(app)
 
 	// Test with custom error handling
-	Post(oapi, "/users", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/users", func(c fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		if input.Username == "forbidden" {
 			return PostOutput{}, PostError{
 				StatusCode: 403,
@@ -438,7 +438,7 @@ func TestPostOApi_OperationStorage(t *testing.T) {
 	// Check that POST operations are properly stored
 	initialCount := len(oapi.operations)
 
-	Post(oapi, "/test", func(c *fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
+	Post(oapi, "/test", func(c fiber.Ctx, input PostUserInput) (PostOutput, PostError) {
 		return PostOutput{Message: "test"}, PostError{}
 	}, OpenAPIOptions{
 		OperationID: "test-post-operation",

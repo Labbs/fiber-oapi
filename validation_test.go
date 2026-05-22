@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Advanced tests for validation with validator
 
 type UserCreateInput struct {
-	Username string `path:"username" validate:"required,min=3,max=20,alphanum"`
+	Username string `uri:"username" validate:"required,min=3,max=20,alphanum"`
 	Email    string `query:"email" validate:"required,email"`
 	Age      int    `query:"age" validate:"required,min=13,max=120"`
 	Website  string `query:"website" validate:"omitempty,url"`
@@ -21,8 +21,8 @@ type UserCreateInput struct {
 }
 
 type ProductInput struct {
-	CategoryID string  `path:"categoryId" validate:"required,uuid4"`
-	ProductID  string  `path:"productId" validate:"required,numeric"`
+	CategoryID string  `uri:"categoryId" validate:"required,uuid4"`
+	ProductID  string  `uri:"productId" validate:"required,numeric"`
 	MinPrice   float64 `query:"minPrice" validate:"omitempty,min=0"`
 	MaxPrice   float64 `query:"maxPrice" validate:"omitempty,min=0,gtfield=MinPrice"`
 	InStock    bool    `query:"inStock"`
@@ -32,7 +32,7 @@ func TestAdvancedValidation_UserCreate(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app)
 
-	Get(oapi, "/users/:username", func(c *fiber.Ctx, input UserCreateInput) (TestOutput, TestError) {
+	Get(oapi, "/users/:username", func(c fiber.Ctx, input UserCreateInput) (TestOutput, TestError) {
 		return TestOutput{
 			Message: fmt.Sprintf("Valid user: %s, %s, age %d, role %s",
 				input.Username, input.Email, input.Age, input.Role),
@@ -135,7 +135,7 @@ func TestAdvancedValidation_Product(t *testing.T) {
 	oapi := New(app)
 
 	Get(oapi, "/categories/:categoryId/products/:productId",
-		func(c *fiber.Ctx, input ProductInput) (TestOutput, TestError) {
+		func(c fiber.Ctx, input ProductInput) (TestOutput, TestError) {
 			return TestOutput{
 				Message: fmt.Sprintf("Product %s in category %s, price range: %.2f-%.2f, in stock: %t",
 					input.ProductID, input.CategoryID, input.MinPrice, input.MaxPrice, input.InStock),
@@ -227,10 +227,10 @@ func TestValidation_CustomMessages(t *testing.T) {
 	oapi := New(app)
 
 	type SimpleInput struct {
-		Name string `path:"name" validate:"required,min=3"`
+		Name string `uri:"name" validate:"required,min=3"`
 	}
 
-	Get(oapi, "/simple/:name", func(c *fiber.Ctx, input SimpleInput) (TestOutput, TestError) {
+	Get(oapi, "/simple/:name", func(c fiber.Ctx, input SimpleInput) (TestOutput, TestError) {
 		return TestOutput{Message: "Valid"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "simple-validation",

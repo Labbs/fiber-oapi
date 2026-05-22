@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // AuthContext contains user authentication details
@@ -50,7 +50,7 @@ type SecurityScheme struct {
 }
 
 // GetAuthContext extracts the authentication context from Fiber
-func GetAuthContext(c *fiber.Ctx) (*AuthContext, error) {
+func GetAuthContext(c fiber.Ctx) (*AuthContext, error) {
 	auth, ok := c.Locals("auth").(*AuthContext)
 	if !ok {
 		return nil, fmt.Errorf("no authentication context found")
@@ -59,7 +59,7 @@ func GetAuthContext(c *fiber.Ctx) (*AuthContext, error) {
 }
 
 // RequireResourceAccess checks permissions in handlers
-func RequireResourceAccess(c *fiber.Ctx, authService AuthorizationService, resourceType, resourceID, action string) error {
+func RequireResourceAccess(c fiber.Ctx, authService AuthorizationService, resourceType, resourceID, action string) error {
 	authCtx, err := GetAuthContext(c)
 	if err != nil {
 		return c.Status(401).JSON(fiber.Map{
@@ -88,7 +88,7 @@ func RequireResourceAccess(c *fiber.Ctx, authService AuthorizationService, resou
 
 // BearerTokenMiddleware creates a JWT/Bearer middleware
 func BearerTokenMiddleware(validator AuthorizationService) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
 			return c.Status(401).JSON(fiber.Map{
@@ -119,7 +119,7 @@ func BearerTokenMiddleware(validator AuthorizationService) fiber.Handler {
 
 // RoleGuard middleware for role verification
 func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		authCtx, err := GetAuthContext(c)
 		if err != nil {
 			return c.Status(401).JSON(fiber.Map{
@@ -142,7 +142,7 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 
 // validateAuthorization validates permissions based on configured security schemes.
 // When SecuritySchemes is empty, it falls back to Bearer-only validation for backward compatibility.
-func validateAuthorization(c *fiber.Ctx, input interface{}, authService AuthorizationService, config *Config, requiredRoles []string, requireAllRoles bool) error {
+func validateAuthorization(c fiber.Ctx, input interface{}, authService AuthorizationService, config *Config, requiredRoles []string, requireAllRoles bool) error {
 	if authService == nil {
 		if len(requiredRoles) > 0 {
 			return &AuthError{StatusCode: 500, Message: "authorization service not configured"}
@@ -240,7 +240,7 @@ func checkRequiredRoles(authCtx *AuthContext, authService AuthorizationService, 
 }
 
 // validateResourceAccess validates resource access based on tags
-func validateResourceAccess(c *fiber.Ctx, authCtx *AuthContext, input interface{}, authService AuthorizationService) error {
+func validateResourceAccess(c fiber.Ctx, authCtx *AuthContext, input interface{}, authService AuthorizationService) error {
 	inputValue := reflect.ValueOf(input)
 	inputType := reflect.TypeOf(input)
 

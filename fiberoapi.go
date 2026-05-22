@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -119,14 +119,14 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 
 func (o *OApiApp) setupDocsRoutes() {
 	// Serve OpenAPI JSON specification
-	o.f.Get(o.Config().OpenAPIJSONPath, func(c *fiber.Ctx) error {
+	o.f.Get(o.Config().OpenAPIJSONPath, func(c fiber.Ctx) error {
 		spec := o.GenerateOpenAPISpec()
 		c.Set("Content-Type", "application/json")
 		return c.JSON(spec)
 	})
 
 	// Serve OpenAPI YAML specification
-	o.f.Get(o.Config().OpenAPIYamlPath, func(c *fiber.Ctx) error {
+	o.f.Get(o.Config().OpenAPIYamlPath, func(c fiber.Ctx) error {
 		spec, err := o.GenerateOpenAPISpecYAML()
 		if err != nil {
 			return err
@@ -136,7 +136,7 @@ func (o *OApiApp) setupDocsRoutes() {
 	})
 
 	// Serve Redoc documentation
-	o.f.Get(o.Config().OpenAPIDocsPath, func(c *fiber.Ctx) error {
+	o.f.Get(o.Config().OpenAPIDocsPath, func(c fiber.Ctx) error {
 		html := generateRedocHTML(o.Config().OpenAPIJSONPath, "API Documentation")
 		c.Set("Content-Type", "text/html")
 		return c.SendString(html)
@@ -144,8 +144,8 @@ func (o *OApiApp) setupDocsRoutes() {
 
 	// Handle trailing slash redirect
 	if !strings.HasSuffix(o.Config().OpenAPIDocsPath, "/") {
-		o.f.Get(o.Config().OpenAPIDocsPath+"/", func(c *fiber.Ctx) error {
-			return c.Redirect(o.Config().OpenAPIDocsPath)
+		o.f.Get(o.Config().OpenAPIDocsPath+"/", func(c fiber.Ctx) error {
+			return c.Redirect().To(o.Config().OpenAPIDocsPath)
 		})
 	}
 }
@@ -921,12 +921,11 @@ func Method[TInput any, TOutput any, TError any](
 	})
 
 	// Wrapper
-	fiberHandler := func(c *fiber.Ctx) error {
+	fiberHandler := func(c fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
 			// Check for authentication/authorization errors first
-			var authErr *AuthError
-			if errors.As(err, &authErr) {
+			if authErr, ok := errors.AsType[*AuthError](err); ok {
 				if app.config.AuthErrorHandler != nil {
 					return app.config.AuthErrorHandler(c, authErr)
 				}
@@ -972,7 +971,7 @@ func Method[TInput any, TOutput any, TError any](
 		return nil
 	}
 
-	app.f.Add(m, fullPath, fiberHandler)
+	app.f.Add([]string{m}, fullPath, fiberHandler)
 }
 
 // Get defines a GET operation for the OpenAPI documentation

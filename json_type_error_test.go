@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // JSON Type Mismatch Error Handling Tests
@@ -45,7 +45,7 @@ func TestJSONTypeMismatchErrors(t *testing.T) {
 		Message string `json:"message"`
 	}
 
-	Post(oapi, "/test", func(c *fiber.Ctx, input CreateRequest) (CreateResponse, TestError) {
+	Post(oapi, "/test", func(c fiber.Ctx, input CreateRequest) (CreateResponse, TestError) {
 		return CreateResponse{Message: "created"}, TestError{}
 	}, OpenAPIOptions{
 		OperationID: "create",
@@ -283,7 +283,7 @@ func TestJSONTypeMismatchWithCustomHandler(t *testing.T) {
 	app := fiber.New()
 
 	// Create a custom validation error handler
-	customHandler := func(c *fiber.Ctx, err error) error {
+	customHandler := func(c fiber.Ctx, err error) error {
 		return c.Status(422).JSON(fiber.Map{
 			"status":  "error",
 			"message": err.Error(),
@@ -302,7 +302,7 @@ func TestJSONTypeMismatchWithCustomHandler(t *testing.T) {
 		Result string `json:"result"`
 	}
 
-	Post(oapi, "/test", func(c *fiber.Ctx, input TestRequest) (TestResponse, TestError) {
+	Post(oapi, "/test", func(c fiber.Ctx, input TestRequest) (TestResponse, TestError) {
 		return TestResponse{Result: "OK"}, TestError{}
 	}, OpenAPIOptions{})
 
@@ -351,7 +351,7 @@ func TestAllTypeMismatches(t *testing.T) {
 		Message string `json:"message"`
 	}
 
-	Post(oapi, "/test", func(c *fiber.Ctx, input ComplexRequest) (TestResponse, TestError) {
+	Post(oapi, "/test", func(c fiber.Ctx, input ComplexRequest) (TestResponse, TestError) {
 		return TestResponse{Message: "OK"}, TestError{}
 	}, OpenAPIOptions{})
 
@@ -445,7 +445,7 @@ func TestAllTypeMismatches(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", "/test", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
-			resp, err := app.Test(req, -1)
+			resp, err := app.Test(req, fiber.TestConfig{Timeout: 0})
 			if err != nil {
 				t.Fatalf("Test error: %v", err)
 			}

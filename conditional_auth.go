@@ -4,12 +4,12 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // ConditionalAuthMiddleware creates middleware that applies only to specified routes
 func ConditionalAuthMiddleware(authMiddleware fiber.Handler, excludePaths ...string) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		path := c.Path()
 
 		// Verify if the current path is in the exclude list
@@ -49,7 +49,7 @@ func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.
 // It iterates over DefaultSecurity requirements (OR semantics) and validates
 // using the appropriate scheme handler.
 func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		securityReqs := config.DefaultSecurity
 		if len(securityReqs) == 0 {
 			securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
@@ -101,7 +101,7 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 // BasicAuthMiddleware creates a standalone middleware for HTTP Basic authentication.
 // The authService must implement the BasicAuthValidator interface.
 func BasicAuthMiddleware(validator AuthorizationService) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		authCtx, err := validateBasicAuth(c, validator)
 		if err != nil {
 			status, label := classifyAuthError(err)
@@ -119,7 +119,7 @@ func BasicAuthMiddleware(validator AuthorizationService) fiber.Handler {
 // APIKeyMiddleware creates a standalone middleware for API Key authentication.
 // The authService must implement the APIKeyValidator interface.
 func APIKeyMiddleware(validator AuthorizationService, scheme SecurityScheme) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		authCtx, err := validateAPIKey(c, scheme, validator)
 		if err != nil {
 			status, label := classifyAuthError(err)
@@ -137,7 +137,7 @@ func APIKeyMiddleware(validator AuthorizationService, scheme SecurityScheme) fib
 // AWSSignatureMiddleware creates a standalone middleware for AWS Signature V4 authentication.
 // The authService must implement the AWSSignatureValidator interface.
 func AWSSignatureMiddleware(validator AuthorizationService) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		authCtx, err := validateAWSSigV4(c, validator)
 		if err != nil {
 			status, label := classifyAuthError(err)

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gofiber/fiber/v2"
-	fiberoapi "github.com/labbs/fiber-oapi"
+	"github.com/gofiber/fiber/v3"
+	fiberoapi "github.com/labbs/fiber-oapi/v3"
 )
 
 type SearchInput struct {
-	Name     string  `path:"name" validate:"required"`
+	Name     string  `uri:"name" validate:"required"`
 	Email    string  `query:"email" validate:"omitempty,email"`
 	Age      int     `query:"age" validate:"omitempty,min=0,max=120"`
 	Active   bool    `query:"active"`
@@ -47,7 +47,7 @@ func main() {
 	oapi := fiberoapi.New(app)
 
 	// Endpoint avec génération automatique des paramètres
-	fiberoapi.Get(oapi, "/users/:name", func(c *fiber.Ctx, input SearchInput) (SearchOutput, ErrorResponse) {
+	fiberoapi.Get(oapi, "/users/:name", func(c fiber.Ctx, input SearchInput) (SearchOutput, ErrorResponse) {
 		// Simulate search results
 		user := User{
 			ID:       1,

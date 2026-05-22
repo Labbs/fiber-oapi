@@ -3,7 +3,7 @@ package fiberoapi
 import (
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestConfigMerging(t *testing.T) {

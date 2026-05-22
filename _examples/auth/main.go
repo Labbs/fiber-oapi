@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	fiberoapi "github.com/Labbs/fiber-oapi"
-	"github.com/gofiber/fiber/v2"
+	fiberoapi "github.com/labbs/fiber-oapi/v3"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Authentication service with role management.
@@ -197,11 +197,11 @@ type CreateUserResponse struct {
 }
 
 type DocumentRequest struct {
-	DocumentID string `path:"documentId" validate:"required"`
+	DocumentID string `uri:"documentId" validate:"required"`
 }
 
 type UpdateDocumentRequest struct {
-	DocumentID string `path:"documentId" validate:"required"`
+	DocumentID string `uri:"documentId" validate:"required"`
 	Title      string `json:"title" validate:"required,min=1,max=100"`
 	Content    string `json:"content" validate:"required,min=1"`
 }
@@ -241,7 +241,7 @@ func main() {
 		EnableAuthorization: true,
 		AuthService:         authService,
 		// Custom error handler for authentication/authorization errors
-		AuthErrorHandler: func(c *fiber.Ctx, err *fiberoapi.AuthError) error {
+		AuthErrorHandler: func(c fiber.Ctx, err *fiberoapi.AuthError) error {
 			errType := "authentication_error"
 			if err.StatusCode == 403 {
 				errType = "authorization_error"
@@ -290,7 +290,7 @@ func main() {
 
 	// ====== ROUTES PUBLIQUES ======
 	fiberoapi.Get(oapi, "/health",
-		func(c *fiber.Ctx, input struct{}) (map[string]string, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input struct{}) (map[string]string, *fiberoapi.ErrorResponse) {
 			return map[string]string{
 				"status":  "ok",
 				"service": "fiber-oapi auth example",
@@ -306,7 +306,7 @@ func main() {
 
 	// ====== ROUTES AVEC AUTHENTIFICATION SIMPLE ======
 	fiberoapi.Get(oapi, "/me",
-		func(c *fiber.Ctx, input struct{}) (CreateUserResponse, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input struct{}) (CreateUserResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			return CreateUserResponse{
 				ID:   1,
@@ -322,7 +322,7 @@ func main() {
 
 	// Test endpoint with map[string]interface{} response
 	fiberoapi.Get(oapi, "/status",
-		func(c *fiber.Ctx, input struct{}) (map[string]interface{}, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input struct{}) (map[string]interface{}, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			return map[string]interface{}{
 				"user_id":   authCtx.UserID,
@@ -348,7 +348,7 @@ func main() {
 	// RequiredRoles: vérifié automatiquement avant le handler
 	// RequiredPermissions: documenté dans la spec OpenAPI
 	fiberoapi.Get(oapi, "/documents/:documentId",
-		func(c *fiber.Ctx, input DocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input DocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			fmt.Printf("📖 User %s (roles: %v) accessing document %s\n", authCtx.UserID, authCtx.Roles, input.DocumentID)
 
@@ -369,7 +369,7 @@ func main() {
 
 	// Route pour les éditeurs (peuvent modifier)
 	fiberoapi.Put(oapi, "/documents/:documentId",
-		func(c *fiber.Ctx, input UpdateDocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input UpdateDocumentRequest) (DocumentResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			fmt.Printf("✏️  User %s (scopes: %v) updating document %s\n", authCtx.UserID, authCtx.Scopes, input.DocumentID)
 
@@ -390,7 +390,7 @@ func main() {
 
 	// Route pour partager (éditeurs seulement)
 	fiberoapi.Post(oapi, "/documents/:documentId/share",
-		func(c *fiber.Ctx, input DocumentRequest) (DocumentShareResponse, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input DocumentRequest) (DocumentShareResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			fmt.Printf("🔗 User %s sharing document %s\n", authCtx.UserID, input.DocumentID)
 
@@ -408,7 +408,7 @@ func main() {
 
 	// Route réservée aux administrateurs
 	fiberoapi.Delete(oapi, "/documents/:documentId",
-		func(c *fiber.Ctx, input DocumentRequest) (DocumentDeleteResponse, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input DocumentRequest) (DocumentDeleteResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			fmt.Printf("🗑️  Admin %s deleting document %s\n", authCtx.UserID, input.DocumentID)
 
@@ -426,7 +426,7 @@ func main() {
 
 	// Route de création d'utilisateur (admin seulement)
 	fiberoapi.Post(oapi, "/users",
-		func(c *fiber.Ctx, input CreateUserRequest) (CreateUserResponse, *fiberoapi.ErrorResponse) {
+		func(c fiber.Ctx, input CreateUserRequest) (CreateUserResponse, *fiberoapi.ErrorResponse) {
 			authCtx, _ := fiberoapi.GetAuthContext(c)
 			fmt.Printf("👤 Admin %s creating user: %s\n", authCtx.UserID, input.Name)
 

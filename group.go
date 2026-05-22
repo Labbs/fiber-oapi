@@ -1,7 +1,7 @@
 package fiberoapi
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // OApiGroup wraps a fiber.Router and adds OpenAPI methods
@@ -27,8 +27,7 @@ func (g *OApiGroup) Use(middleware fiber.Handler) {
 
 // Group creates a new OApiGroup that wraps a fiber.Router
 func (app *OApiApp) Group(prefix string, handlers ...fiber.Handler) *OApiGroup {
-	// Create the actual fiber group
-	fiberGroup := app.f.Group(prefix, handlers...)
+	fiberGroup := app.f.Group(prefix, handlersToAny(handlers)...)
 
 	return &OApiGroup{
 		Router: fiberGroup, // Embed the fiber.Router
@@ -39,17 +38,26 @@ func (app *OApiApp) Group(prefix string, handlers ...fiber.Handler) *OApiGroup {
 
 // Group creates a new sub-group within this group
 func (g *OApiGroup) Group(prefix string, handlers ...fiber.Handler) *OApiGroup {
-	// Create full prefix by combining current prefix with new prefix
 	fullPrefix := g.prefix + prefix
 
-	// Create the fiber group from the parent app
-	fiberGroup := g.oapi.f.Group(fullPrefix, handlers...)
+	fiberGroup := g.oapi.f.Group(fullPrefix, handlersToAny(handlers)...)
 
 	return &OApiGroup{
 		Router: fiberGroup,
 		oapi:   g.oapi,
 		prefix: fullPrefix,
 	}
+}
+
+func handlersToAny(handlers []fiber.Handler) []any {
+	if len(handlers) == 0 {
+		return nil
+	}
+	out := make([]any, len(handlers))
+	for i, h := range handlers {
+		out[i] = h
+	}
+	return out
 }
 
 // Group creates a new group from an OApiRouter (app or group)

@@ -21,8 +21,12 @@ A Go library that extends Fiber to add automatic OpenAPI documentation generatio
 ## Installation
 
 ```bash
-go get github.com/labbs/fiber-oapi
+go get github.com/labbs/fiber-oapi/v3
 ```
+
+> **Upgrading from v1.x?** v3 tracks Fiber v3 and requires Go 1.26+. Two breaking changes to be aware of:
+> - Handlers now take `fiber.Ctx` (struct value) instead of `*fiber.Ctx`.
+> - The path-parameter struct tag is now `uri:` instead of `path:` (Fiber v3 binder convention). Query and header tags are unchanged.
 
 ## Quick Start
 
@@ -30,8 +34,8 @@ go get github.com/labbs/fiber-oapi
 package main
 
 import (
-    "github.com/gofiber/fiber/v2"
-    fiberoapi "github.com/labbs/fiber-oapi"
+    "github.com/gofiber/fiber/v3"
+    fiberoapi "github.com/labbs/fiber-oapi/v3"
 )
 
 func main() {
@@ -39,8 +43,8 @@ func main() {
     oapi := fiberoapi.New(app)
 
     fiberoapi.Get(oapi, "/hello/:name",
-        func(c *fiber.Ctx, input struct {
-            Name string `path:"name" validate:"required,min=2"`
+        func(c fiber.Ctx, input struct {
+            Name string `uri:"name" validate:"required,min=2"`
         }) (fiber.Map, *fiberoapi.ErrorResponse) {
             return fiber.Map{"message": "Hello " + input.Name}, nil
         },
@@ -98,7 +102,7 @@ fiberoapi.Method(method, router, path, handler, options) // Custom HTTP method
 
 ```go
 type MyInput struct {
-    ID     string `path:"id" validate:"required"`           // Path parameter
+    ID     string `uri:"id" validate:"required"`           // Path parameter
     Filter string `query:"filter" validate:"omitempty"`      // Query parameter
     Auth   string `header:"Authorization"`                   // Header parameter
     Title  string `json:"title" validate:"required,min=1"`   // JSON body field
@@ -286,7 +290,7 @@ fiberoapi.Put(oapi, "/documents/:id", handler,
 
 // Resource-based access via struct tags
 type UpdateDocInput struct {
-    DocumentID string `path:"documentId" validate:"required" resource:"document" action:"write"`
+    DocumentID string `uri:"documentId" validate:"required" resource:"document" action:"write"`
     Title      string `json:"title" validate:"required"`
 }
 
@@ -299,7 +303,7 @@ fiberoapi.RequireResourceAccess(c, authService, "document", docID, "delete")
 Access the authenticated user in handlers:
 
 ```go
-fiberoapi.Get(oapi, "/me", func(c *fiber.Ctx, input struct{}) (fiber.Map, *fiberoapi.ErrorResponse) {
+fiberoapi.Get(oapi, "/me", func(c fiber.Ctx, input struct{}) (fiber.Map, *fiberoapi.ErrorResponse) {
     authCtx, err := fiberoapi.GetAuthContext(c)
     if err != nil {
         return nil, &fiberoapi.ErrorResponse{Code: 401, Details: "Not authenticated"}
@@ -319,7 +323,7 @@ fiberoapi.Get(oapi, "/me", func(c *fiber.Ctx, input struct{}) (fiber.Map, *fiber
 
 ```go
 oapi := fiberoapi.New(app, fiberoapi.Config{
-    ValidationErrorHandler: func(c *fiber.Ctx, err error) error {
+    ValidationErrorHandler: func(c fiber.Ctx, err error) error {
         return c.Status(400).JSON(fiber.Map{
             "success": false,
             "error":   err.Error(),
@@ -334,7 +338,7 @@ oapi := fiberoapi.New(app, fiberoapi.Config{
 oapi := fiberoapi.New(app, fiberoapi.Config{
     EnableAuthorization: true,
     AuthService:         authService,
-    AuthErrorHandler: func(c *fiber.Ctx, err *fiberoapi.AuthError) error {
+    AuthErrorHandler: func(c fiber.Ctx, err *fiberoapi.AuthError) error {
         // err.StatusCode: 401, 403, or 5xx
         // err.Message: human-readable error message
         return c.Status(err.StatusCode).JSON(fiber.Map{

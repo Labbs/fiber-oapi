@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestBearerTokenMiddleware(t *testing.T) {
@@ -15,7 +15,7 @@ func TestBearerTokenMiddleware(t *testing.T) {
 	t.Run("Valid token sets auth context", func(t *testing.T) {
 		app := fiber.New()
 		app.Use(middleware)
-		app.Get("/test", func(c *fiber.Ctx) error {
+		app.Get("/test", func(c fiber.Ctx) error {
 			authCtx, err := GetAuthContext(c)
 			if err != nil {
 				return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -42,7 +42,7 @@ func TestBearerTokenMiddleware(t *testing.T) {
 	t.Run("Invalid token returns error", func(t *testing.T) {
 		app := fiber.New()
 		app.Use(middleware)
-		app.Get("/test", func(c *fiber.Ctx) error {
+		app.Get("/test", func(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"message": "should not reach here"})
 		})
 
@@ -62,7 +62,7 @@ func TestBearerTokenMiddleware(t *testing.T) {
 	t.Run("Missing authorization header returns error", func(t *testing.T) {
 		app := fiber.New()
 		app.Use(middleware)
-		app.Get("/test", func(c *fiber.Ctx) error {
+		app.Get("/test", func(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"message": "should not reach here"})
 		})
 
@@ -88,13 +88,13 @@ func TestConditionalAuthMiddleware(t *testing.T) {
 
 		app := fiber.New()
 		app.Use(conditionalMiddleware)
-		app.Get("/docs", func(c *fiber.Ctx) error {
+		app.Get("/docs", func(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"message": "docs page"})
 		})
-		app.Get("/health", func(c *fiber.Ctx) error {
+		app.Get("/health", func(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"status": "ok"})
 		})
-		app.Get("/protected", func(c *fiber.Ctx) error {
+		app.Get("/protected", func(c fiber.Ctx) error {
 			return c.JSON(fiber.Map{"message": "protected"})
 		})
 
