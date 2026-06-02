@@ -81,14 +81,15 @@ type Config struct {
 	NotFoundHandler        fiber.Handler             // Custom handler for unmatched routes. Receives a raw fiber.Ctx and owns the response (status + body). To reuse the library's envelope shape, call NotFoundEnvelope(c). Has no effect unless UseNotFoundHandler() is also called.
 
 	// DefaultErrorShape, when non-nil, replaces the built-in ErrorEnvelope
-	// across the library — both at runtime (validation, parse, auth, 404/405
-	// responses) and in the generated OpenAPI spec. Pass an empty/zero instance
-	// of any struct (or pointer-to-struct); the library fills its Code/StatusCode,
+	// across the library — both at runtime (parse, auth, 404/405 responses)
+	// and in the generated OpenAPI spec. Pass an empty/zero instance of any
+	// struct (or pointer-to-struct); the library fills its Code/StatusCode,
 	// Message/Description/Msg, Type, and Details fields per error category via
-	// reflection. Use this when you want every error in your API to follow a
-	// single shape consistent with the custom errors you declare in
-	// OpenAPIOptions.Errors. Leaving it nil keeps the default ErrorEnvelope.
-	DefaultErrorShape any
+	// reflection.
+	//
+	// Note: 422 validation responses intentionally keep the rich ErrorEnvelope
+	// shape (one entry per failing field) even when DefaultErrorShape is set.
+	// Leaving DefaultErrorShape nil keeps the default ErrorEnvelope everywhere.
 	IncludeInvalidValueInErrors bool                 // Include offending value in default error envelope (default: false — may leak secrets)
 }
 
