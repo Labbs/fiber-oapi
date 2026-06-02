@@ -269,9 +269,9 @@ func TestJSONTypeMismatchErrors(t *testing.T) {
 				if !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)
 				}
-				// Ensure it returns validation_error type
-				if !strings.Contains(bodyStr, "validation_error") {
-					t.Errorf("Expected validation_error type, got %s", bodyStr)
+				// Ensure it returns type_error in the envelope (JSON type mismatch category)
+				if !strings.Contains(bodyStr, "type_error") {
+					t.Errorf("Expected type_error in envelope, got %s", bodyStr)
 				}
 			}
 		})
