@@ -58,42 +58,42 @@ func TestAdvancedValidation_UserCreate(t *testing.T) {
 		{
 			name:           "Username too short",
 			url:            "/users/jo?email=john@example.com&age=25&role=user",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
 		{
 			name:           "Username with special chars",
 			url:            "/users/john@123?email=john@example.com&age=25&role=user",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "alphanum",
 		},
 		{
 			name:           "Invalid email",
 			url:            "/users/john123?email=not-an-email&age=25&role=user",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "email",
 		},
 		{
 			name:           "Age too young",
 			url:            "/users/john123?email=john@example.com&age=12&role=user",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
 		{
 			name:           "Invalid role",
 			url:            "/users/john123?email=john@example.com&age=25&role=superadmin",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "oneof",
 		},
 		{
 			name:           "Invalid website URL",
 			url:            "/users/john123?email=john@example.com&age=25&role=user&website=not-a-url",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "url",
 		},
@@ -119,8 +119,8 @@ func TestAdvancedValidation_UserCreate(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "validation_error") {
-					t.Errorf("Expected validation error, got %s", bodyStr)
+				if !strings.Contains(bodyStr, `"errors":`) {
+					t.Errorf("Expected error envelope, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)
@@ -161,28 +161,28 @@ func TestAdvancedValidation_Product(t *testing.T) {
 		{
 			name:           "Invalid UUID for categoryId",
 			url:            "/categories/not-a-uuid/products/12345?minPrice=10.50&maxPrice=99.99",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "uuid4",
 		},
 		{
 			name:           "Non-numeric productId",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products/abc123?minPrice=10.50&maxPrice=99.99",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "numeric",
 		},
 		{
 			name:           "Negative price",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products/12345?minPrice=-5.00&maxPrice=99.99",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
 		{
 			name:           "MaxPrice less than MinPrice",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products/12345?minPrice=50.00&maxPrice=10.00",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "gtfield",
 		},
@@ -208,8 +208,8 @@ func TestAdvancedValidation_Product(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "validation_error") {
-					t.Errorf("Expected validation error, got %s", bodyStr)
+				if !strings.Contains(bodyStr, `"errors":`) {
+					t.Errorf("Expected error envelope, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)
@@ -242,20 +242,21 @@ func TestValidation_CustomMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if resp.StatusCode != 400 {
-		t.Errorf("Expected status 400, got %d", resp.StatusCode)
+	if resp.StatusCode != 422 {
+		t.Errorf("Expected status 422, got %d", resp.StatusCode)
 	}
 
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := string(body)
 
-	// Check that we receive the validation error
+	// Check that we receive the validation error envelope
 	if !strings.Contains(bodyStr, "validation_error") {
 		t.Errorf("Expected validation error, got %s", bodyStr)
 	}
 
-	// The error message contains validator details
-	if !strings.Contains(bodyStr, "min") || !strings.Contains(bodyStr, "Name") {
+	// The error message contains validator details. The field name in the envelope
+	// uses the JSON/URI tag (lowercase "name"), not the Go field name.
+	if !strings.Contains(bodyStr, "min") || !strings.Contains(bodyStr, "name") {
 		t.Errorf("Expected detailed validation error with field name and rule, got %s", bodyStr)
 	}
 }

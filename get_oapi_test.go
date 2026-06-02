@@ -347,8 +347,8 @@ func TestGetOApi_Validation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if resp2.StatusCode != 400 {
-		t.Errorf("Expected status 400 for validation error, got %d", resp2.StatusCode)
+	if resp2.StatusCode != 422 {
+		t.Errorf("Expected status 422 for validation error, got %d", resp2.StatusCode)
 	}
 
 	body2, _ := io.ReadAll(resp2.Body)
@@ -362,8 +362,8 @@ func TestGetOApi_Validation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if resp3.StatusCode != 400 {
-		t.Errorf("Expected status 400 for invalid email, got %d", resp3.StatusCode)
+	if resp3.StatusCode != 422 {
+		t.Errorf("Expected status 422 for invalid email, got %d", resp3.StatusCode)
 	}
 
 	// Test 4: Invalid age (too high)
@@ -372,8 +372,8 @@ func TestGetOApi_Validation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if resp4.StatusCode != 400 {
-		t.Errorf("Expected status 400 for invalid age, got %d", resp4.StatusCode)
+	if resp4.StatusCode != 422 {
+		t.Errorf("Expected status 422 for invalid age, got %d", resp4.StatusCode)
 	}
 
 	// Test 5: Required parameter missing (no name in path)
@@ -411,8 +411,8 @@ func TestGetOApi_ValidationRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
-	if resp.StatusCode != 400 {
-		t.Errorf("Expected status 400 for missing required field, got %d", resp.StatusCode)
+	if resp.StatusCode != 422 {
+		t.Errorf("Expected status 422 for missing required field, got %d", resp.StatusCode)
 	}
 
 	body, _ := io.ReadAll(resp.Body)

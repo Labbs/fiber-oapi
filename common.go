@@ -1,8 +1,6 @@
 package fiberoapi
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -71,11 +69,13 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 
 		if bodyLength > 0 || strings.Contains(contentType, "application/json") || strings.Contains(contentType, "application/x-www-form-urlencoded") {
 			if err := c.Bind().Body(&input); err != nil {
-				// For POST without a body, tolerate the parsing failure
+				// For POST without a body, tolerate the parsing failure.
 				if bodyLength == 0 && method == "POST" {
 					// no-op
-				} else if friendly := translateJSONError(err); friendly != nil {
-					return input, friendly
+				} else if wrapped := wrapJSONTypeError(err); wrapped != nil {
+					// Type-mismatch errors get a friendly Error() while staying
+					// errors.As-recoverable down to the original *json.UnmarshalTypeError.
+					return input, wrapped
 				} else {
 					return input, err
 				}
@@ -114,24 +114,6 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	return input, nil
 }
 
-// translateJSONError converts low-level json decoder errors into a stable,
-// user-facing validation message. Returns nil if err is not a JSON type mismatch.
-func translateJSONError(err error) error {
-	ute, ok := errors.AsType[*json.UnmarshalTypeError](err)
-	if !ok {
-		return nil
-	}
-	fieldName := ute.Field
-	if i := strings.LastIndex(fieldName, "."); i >= 0 {
-		fieldName = fieldName[i+1:]
-	}
-	if fieldName == "" {
-		return fmt.Errorf("invalid JSON: expected %s but got %s", ute.Type.String(), ute.Value)
-	}
-	return fmt.Errorf("invalid type for field '%s': expected %s but got %s",
-		fieldName, ute.Type.String(), ute.Value)
-}
-
 // Function to handle custom errors
 func handleCustomError(c fiber.Ctx, customErr interface{}) error {
 	// Use reflection to extract error information
@@ -166,9 +148,22 @@ func handleCustomError(c fiber.Ctx, customErr interface{}) error {
 	return nil
 }
 
-// Utility to check if a value is zero
+// Utility to check if a value is zero. Handles three edge cases beyond the
+// straightforward reflect.ValueOf().IsZero():
+//   - untyped nil (e.g. the handler signature has TError = error and the handler
+//     returned nil) — reflect.ValueOf(nil) returns an invalid Value whose
+//     IsZero() would panic;
+//   - typed nil pointer (zero value of *Foo) — IsZero correctly reports true;
+//   - zero struct (Foo{}) — IsZero reports true.
 func isZero(v interface{}) bool {
-	return reflect.ValueOf(v).IsZero()
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return true
+	}
+	return rv.IsZero()
 }
 
 // Validate that struct parameters match the path
@@ -417,115 +412,6 @@ func getSchemaForType(t reflect.Type) map[string]interface{} {
 	return schema
 }
 
-// detectTypeMismatchFromBody attempts to identify which field caused a JSON type mismatch
-// by parsing the request body and comparing against the expected struct type
-func detectTypeMismatchFromBody(body []byte, input interface{}) (fieldName, expectedType, actualType string) {
-	// Parse the JSON body into a map to see what was actually sent
-	var bodyMap map[string]interface{}
-	if err := json.Unmarshal(body, &bodyMap); err != nil {
-		return "", "", ""
-	}
-
-	// Get the struct type using reflection
-	inputValue := reflect.ValueOf(input)
-	if inputValue.Kind() == reflect.Ptr {
-		inputValue = inputValue.Elem()
-	}
-	inputType := inputValue.Type()
-
-	if inputType.Kind() != reflect.Struct {
-		return "", "", ""
-	}
-
-	// Iterate through struct fields to find the mismatch
-	for i := 0; i < inputType.NumField(); i++ {
-		field := inputType.Field(i)
-
-		// Get the JSON tag name (default to field name if no tag)
-		jsonTag := field.Tag.Get("json")
-		if jsonTag == "" {
-			jsonTag = field.Name
-		} else {
-			// Remove omitempty and other options from the tag
-			jsonTag = strings.Split(jsonTag, ",")[0]
-		}
-
-		// Check if this field is in the body map
-		if actualValue, exists := bodyMap[jsonTag]; exists {
-			expectedFieldType := dereferenceType(field.Type)
-			actualValueType := getJSONValueType(actualValue)
-
-			// Check for type mismatch
-			mismatch := false
-			expectedTypeName := ""
-
-			switch expectedFieldType.Kind() {
-			case reflect.String:
-				expectedTypeName = "string"
-				if actualValueType != "string" {
-					mismatch = true
-				}
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				expectedTypeName = "integer"
-				if actualValueType != "number" {
-					mismatch = true
-				}
-			case reflect.Float32, reflect.Float64:
-				expectedTypeName = "number"
-				if actualValueType != "number" {
-					mismatch = true
-				}
-			case reflect.Bool:
-				expectedTypeName = "boolean"
-				if actualValueType != "boolean" {
-					mismatch = true
-				}
-			case reflect.Slice, reflect.Array:
-				expectedTypeName = fmt.Sprintf("[]%s", dereferenceType(expectedFieldType.Elem()).Kind())
-				if actualValueType != "array" {
-					mismatch = true
-				}
-			case reflect.Map:
-				expectedTypeName = "map"
-				if actualValueType != "object" {
-					mismatch = true
-				}
-			case reflect.Struct:
-				expectedTypeName = "object"
-				if actualValueType != "object" {
-					mismatch = true
-				}
-			}
-
-			if mismatch {
-				return field.Name, expectedTypeName, actualValueType
-			}
-		}
-	}
-
-	return "", "", ""
-}
-
-// getJSONValueType returns the JSON type name for a value parsed from JSON
-func getJSONValueType(value interface{}) string {
-	switch value.(type) {
-	case string:
-		return "string"
-	case float64, int, int64:
-		return "number"
-	case bool:
-		return "boolean"
-	case []interface{}:
-		return "array"
-	case map[string]interface{}:
-		return "object"
-	case nil:
-		return "null"
-	default:
-		return "unknown"
-	}
-}
 
 // mergeParameters merges auto-generated parameters with manually defined ones
 // Manual parameters take precedence over auto-generated ones with the same name

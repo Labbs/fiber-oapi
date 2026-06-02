@@ -14,9 +14,10 @@ type OApiRouter interface {
 
 // OApiApp wraps fiber.App with OpenAPI capabilities
 type OApiApp struct {
-	f          *fiber.App
-	operations []OpenAPIOperation
-	config     Config
+	f                 *fiber.App
+	operations        []OpenAPIOperation
+	config            Config
+	notFoundInstalled bool // true once UseNotFoundHandler has installed the catch-all
 }
 
 // Implement OApiRouter interface for OApiApp
@@ -77,6 +78,18 @@ type Config struct {
 	DefaultSecurity        []map[string][]string     // Default security requirements
 	ValidationErrorHandler ValidationErrorHandler    // Custom handler for validation errors
 	AuthErrorHandler       AuthErrorHandler          // Custom handler for auth errors (401/403/5xx)
+	NotFoundHandler        fiber.Handler             // Custom handler for unmatched routes. Receives a raw fiber.Ctx and owns the response (status + body). To reuse the library's envelope shape, call NotFoundEnvelope(c). Has no effect unless UseNotFoundHandler() is also called.
+
+	// DefaultErrorShape, when non-nil, replaces the built-in ErrorEnvelope
+	// across the library — both at runtime (validation, parse, auth, 404/405
+	// responses) and in the generated OpenAPI spec. Pass an empty/zero instance
+	// of any struct (or pointer-to-struct); the library fills its Code/StatusCode,
+	// Message/Description/Msg, Type, and Details fields per error category via
+	// reflection. Use this when you want every error in your API to follow a
+	// single shape consistent with the custom errors you declare in
+	// OpenAPIOptions.Errors. Leaving it nil keeps the default ErrorEnvelope.
+	DefaultErrorShape any
+	IncludeInvalidValueInErrors bool                 // Include offending value in default error envelope (default: false — may leak secrets)
 }
 
 // OpenAPIOptions represents options for OpenAPI operations
@@ -91,6 +104,25 @@ type OpenAPIOptions struct {
 	RequireAllRoles     bool             `json:"-"`                  // If true, all RequiredRoles must match (AND semantics)
 	RequiredPermissions []string         `json:"-"`                  // Ex: ["document:read", "workspace:admin"]
 	ResourceType        string           `json:"-"`                  // Type de ressource concernée
+
+	// Errors declares the custom error responses this operation can emit. Each
+	// entry is an instance of any struct (or pointer-to-struct) describing one
+	// error case. The library inspects each entry to populate the generated
+	// OpenAPI spec:
+	//   - status code: from a HTTPStatus() int method, or from a "StatusCode"
+	//     or "Code" int field (defaults to 500 if none found)
+	//   - description: from a Description() string method, or from "Message",
+	//     "Description", or "Msg" string fields (falls back to the HTTP reason
+	//     phrase for the status code)
+	//   - schema: generated from the entry's reflect.Type and shared via $ref
+	//     when the type is named, so multiple entries with the same shape do
+	//     not duplicate the schema
+	//   - example: the entry value itself, marshalled as JSON
+	//
+	// At runtime the handler returns one of these instances via its TError
+	// generic parameter (which can be `error`, a concrete `*ErrorResponse`,
+	// or any other type) and the library emits it with the matching status.
+	Errors []any `json:"-"`
 }
 
 // OpenAPIOperation represents a registered operation
@@ -122,8 +154,41 @@ type OpenAPIRequestBody struct {
 	Content     map[string]any `json:"content"`
 }
 
+// ErrorResponse is the legacy flat error shape. Still emitted by handleCustomError
+// when a handler returns a non-zero TError, so existing custom error types keep
+// working. New code should prefer ErrorEnvelope, which is what the default
+// validation / parse / auth handlers now produce.
 type ErrorResponse struct {
 	Code    int    `json:"code"`
 	Details string `json:"details"`
 	Type    string `json:"type"`
+}
+
+// ErrorEnvelope is the default response shape for validation, parsing and auth
+// errors. It carries one entry per failing field plus a context block that lets
+// callers correlate the response with their tracing setup.
+type ErrorEnvelope struct {
+	Errors          []ValidationErrorEntry `json:"errors"`
+	ResponseContext ResponseContext        `json:"response_context"`
+}
+
+// ValidationErrorEntry describes a single failure (one field, one constraint).
+// The same shape is used for body validation errors, JSON type mismatches and
+// authentication / authorization failures so clients only have to parse one
+// envelope.
+type ValidationErrorEntry struct {
+	Type       string `json:"type"`                 // validation_error | type_error | parse_error | authentication_error | authorization_error
+	Code       int    `json:"code"`                 // HTTP status code carried in the response
+	Loc        []any  `json:"loc"`                  // path to the field, e.g. ["body", "address", "zipcode"]
+	Field      string `json:"field,omitempty"`      // leaf field name, redundant with Loc but convenient
+	Msg        string `json:"msg"`                  // human-readable message
+	Constraint string `json:"constraint,omitempty"` // failing rule, e.g. "min=11", "required", "email"
+	Value      any    `json:"value,omitempty"`      // offending value (opt-in via Config.IncludeInvalidValueInErrors)
+}
+
+// ResponseContext carries metadata that helps a client correlate the response
+// with their tracing setup. ResponseID mirrors the incoming X-Request-Id header
+// when present, otherwise it is left empty.
+type ResponseContext struct {
+	ResponseID string `json:"response_id,omitempty"`
 }

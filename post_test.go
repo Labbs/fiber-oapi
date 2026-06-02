@@ -164,35 +164,35 @@ func TestPostOApi_Validation(t *testing.T) {
 		{
 			name:           "Missing required field",
 			body:           `{"email":"alice@example.com","age":28}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "required",
 		},
 		{
 			name:           "Username too short",
 			body:           `{"username":"al","email":"alice@example.com","age":28}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
 		{
 			name:           "Invalid email",
 			body:           `{"username":"alice123","email":"not-an-email","age":28}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "email",
 		},
 		{
 			name:           "Age too young",
 			body:           `{"username":"alice123","email":"alice@example.com","age":10}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
 		{
 			name:           "Bio too long",
 			body:           fmt.Sprintf(`{"username":"alice123","email":"alice@example.com","age":28,"bio":"%s"}`, strings.Repeat("a", 501)),
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "max",
 		},
@@ -201,7 +201,7 @@ func TestPostOApi_Validation(t *testing.T) {
 			body:           `{"username":"alice123","email":"alice@example.com","age":28,}`,
 			expectedStatus: 400,
 			shouldPass:     false,
-			errorContains:  "validation_error",
+			errorContains:  "parse_error",
 		},
 	}
 
@@ -226,8 +226,8 @@ func TestPostOApi_Validation(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "validation_error") {
-					t.Errorf("Expected validation error, got %s", bodyStr)
+				if !strings.Contains(bodyStr, `"errors":`) {
+					t.Errorf("Expected error envelope, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)
@@ -280,7 +280,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 			name:           "Invalid category UUID",
 			url:            "/categories/invalid-uuid/products",
 			body:           `{"name":"Laptop","price":999.99,"quantity":10}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "uuid4",
 		},
@@ -288,7 +288,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 			name:           "Negative price",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products",
 			body:           `{"name":"Laptop","price":-100,"quantity":10}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
@@ -296,7 +296,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 			name:           "Negative quantity",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products",
 			body:           `{"name":"Laptop","price":999.99,"quantity":-1}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
@@ -304,7 +304,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 			name:           "Invalid tag (empty string)",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products",
 			body:           `{"name":"Laptop","price":999.99,"quantity":10,"tags":["gaming",""]}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
@@ -312,7 +312,7 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 			name:           "Tag too long",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products",
 			body:           fmt.Sprintf(`{"name":"Laptop","price":999.99,"quantity":10,"tags":["%s"]}`, strings.Repeat("a", 21)),
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "max",
 		},
@@ -339,8 +339,8 @@ func TestPostOApi_ComplexValidation(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "validation_error") {
-					t.Errorf("Expected validation error, got %s", bodyStr)
+				if !strings.Contains(bodyStr, `"errors":`) {
+					t.Errorf("Expected error envelope, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)

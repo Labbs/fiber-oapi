@@ -79,7 +79,7 @@ func TestHeaderParameterValidation(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
-	assert.Equal(t, 400, resp.StatusCode)
+	assert.Equal(t, 422, resp.StatusCode)
 }
 
 func TestHeaderParameterOpenAPIGeneration(t *testing.T) {

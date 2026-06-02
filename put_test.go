@@ -188,7 +188,7 @@ func TestPutOApi_Validation(t *testing.T) {
 			name:           "Username too short",
 			url:            "/users/user123",
 			body:           `{"username":"al"}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
@@ -196,7 +196,7 @@ func TestPutOApi_Validation(t *testing.T) {
 			name:           "Invalid email format",
 			url:            "/users/user123",
 			body:           `{"email":"not-an-email"}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "email",
 		},
@@ -204,7 +204,7 @@ func TestPutOApi_Validation(t *testing.T) {
 			name:           "Age too young",
 			url:            "/users/user123",
 			body:           `{"age":10}`,
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
@@ -212,7 +212,7 @@ func TestPutOApi_Validation(t *testing.T) {
 			name:           "Bio too long",
 			url:            "/users/user123",
 			body:           fmt.Sprintf(`{"bio":"%s"}`, strings.Repeat("a", 501)),
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "max",
 		},
@@ -222,7 +222,7 @@ func TestPutOApi_Validation(t *testing.T) {
 			body:           `{"username":"alice123","email":"alice@example.com",}`,
 			expectedStatus: 400,
 			shouldPass:     false,
-			errorContains:  "validation_error",
+			errorContains:  "parse_error",
 		},
 	}
 
@@ -247,8 +247,8 @@ func TestPutOApi_Validation(t *testing.T) {
 					t.Errorf("Expected success message, got %s", bodyStr)
 				}
 			} else {
-				if !strings.Contains(bodyStr, "validation_error") {
-					t.Errorf("Expected validation error, got %s", bodyStr)
+				if !strings.Contains(bodyStr, `"errors":`) {
+					t.Errorf("Expected error envelope, got %s", bodyStr)
 				}
 				if tt.errorContains != "" && !strings.Contains(bodyStr, tt.errorContains) {
 					t.Errorf("Expected error to contain '%s', got %s", tt.errorContains, bodyStr)

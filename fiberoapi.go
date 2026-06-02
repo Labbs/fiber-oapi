@@ -52,7 +52,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.OpenAPIDescription != "" ||
 			provided.OpenAPIVersion != "" ||
 			provided.ValidationErrorHandler != nil ||
-			provided.AuthErrorHandler != nil
+			provided.AuthErrorHandler != nil ||
+			provided.NotFoundHandler != nil ||
+			provided.DefaultErrorShape != nil
 
 		// Only override boolean defaults if the config appears to be explicitly set
 		if hasExplicitConfig {
@@ -79,7 +81,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.OpenAPIDescription != "" ||
 			provided.OpenAPIVersion != "" ||
 			provided.ValidationErrorHandler != nil ||
-			provided.AuthErrorHandler != nil)
+			provided.AuthErrorHandler != nil ||
+			provided.NotFoundHandler != nil ||
+			provided.DefaultErrorShape != nil)
 
 		// Only restore defaults if ALL boolean fields are false (suggesting they weren't explicitly set)
 		allBooleansAreFalse := !provided.EnableValidation && !provided.EnableOpenAPIDocs && !provided.EnableAuthorization
@@ -127,6 +131,15 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		if provided.AuthErrorHandler != nil {
 			cfg.AuthErrorHandler = provided.AuthErrorHandler
+		}
+		if provided.NotFoundHandler != nil {
+			cfg.NotFoundHandler = provided.NotFoundHandler
+		}
+		if provided.DefaultErrorShape != nil {
+			cfg.DefaultErrorShape = provided.DefaultErrorShape
+		}
+		if provided.IncludeInvalidValueInErrors {
+			cfg.IncludeInvalidValueInErrors = true
 		}
 	}
 
@@ -223,11 +236,32 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
 			collectAllTypes(op.ErrorType, allTypes)
 		}
+		// Each declared custom error contributes its own type to components.schemas
+		// so multiple error responses sharing a struct ($ref via the same name)
+		// stay deduplicated.
+		for _, errInst := range op.Options.Errors {
+			if errInst == nil {
+				continue
+			}
+			collectAllTypes(reflect.TypeOf(errInst), allTypes)
+		}
 	}
 
 	// Second pass: generate all schemas
 	for typeName, typeInfo := range allTypes {
 		schemas[typeName] = generateSchema(typeInfo)
+	}
+
+	// Always expose the default error envelope shape so every route can $ref it.
+	collectAllTypes(reflect.TypeOf(ErrorEnvelope{}), allTypes)
+	if _, ok := schemas["ErrorEnvelope"]; !ok {
+		schemas["ErrorEnvelope"] = generateSchema(reflect.TypeOf(ErrorEnvelope{}))
+	}
+	if _, ok := schemas["ValidationErrorEntry"]; !ok {
+		schemas["ValidationErrorEntry"] = generateSchema(reflect.TypeOf(ValidationErrorEntry{}))
+	}
+	if _, ok := schemas["ResponseContext"]; !ok {
+		schemas["ResponseContext"] = generateSchema(reflect.TypeOf(ResponseContext{}))
 	}
 
 	for _, op := range o.operations {
@@ -358,7 +392,9 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			}
 		}
 
-		// Error response (400/500)
+		// Custom TError response — only when the handler returns a non-empty TError.
+		// Emitted as a 4xx response separate from the default validation envelope so
+		// callers see both shapes in the spec.
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
 			errorType := dereferenceType(op.ErrorType)
 
@@ -371,14 +407,80 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 				}
 			}
 
-			responses["400"] = map[string]interface{}{
-				"description": "Validation error",
+			responses["4XX"] = map[string]interface{}{
+				"description": "Domain error returned by the handler",
 				"content": map[string]interface{}{
 					"application/json": map[string]interface{}{
 						"schema": schemaRef,
 					},
 				},
 			}
+		}
+
+		// Default error responses produced by parseInput. When the user opted
+		// into a unified shape via Config.DefaultErrorShape, every default entry
+		// uses that shape (schema + a representative example built via the same
+		// reflection helpers used at runtime). Otherwise we fall back to the
+		// built-in ErrorEnvelope.
+		shape := o.config.DefaultErrorShape
+		defaultErrContent := func(cat errorCategory, envExample func() ErrorEnvelope) map[string]interface{} {
+			if shape != nil {
+				return map[string]interface{}{
+					"schema":  errorSchemaRef(reflect.TypeOf(shape)),
+					"example": materializeError(shape, cat),
+				}
+			}
+			return map[string]interface{}{
+				"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
+				"example": envExample(),
+			}
+		}
+
+		// 422 always uses ErrorEnvelope so per-field info (loc / constraint /
+		// field / value) stays first-class for clients building form-level UX,
+		// even when DefaultErrorShape is set for the other error categories.
+		responses["422"] = map[string]interface{}{
+			"description": "Validation error",
+			"content": map[string]interface{}{
+				"application/json": map[string]interface{}{
+					"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
+					"example": exampleValidationEnvelope(),
+				},
+			},
+		}
+		// Only POST/PUT/PATCH can produce JSON parse errors.
+		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
+			responses["400"] = map[string]interface{}{
+				"description":             "Malformed request body",
+				"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
+					Code:    400,
+					Type:    errTypeParse,
+					Message: "invalid type for field 'age': expected int but got string",
+				}, exampleParseEnvelope)},
+			}
+		}
+		// When UseNotFoundHandler() has been installed, every operation can
+		// surface the same shape under 404 — document it.
+		if o.notFoundInstalled {
+			responses["404"] = map[string]interface{}{
+				"description":             "Route not found",
+				"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
+					Code:    404,
+					Type:    errTypeNotFound,
+					Message: "no route matches GET /users/42",
+				}, exampleNotFoundEnvelope)},
+			}
+		}
+		// Per-route custom errors declared via OpenAPIOptions.Errors. Each instance
+		// produces a response entry keyed by its status code, taking precedence over
+		// any default envelope entry for the same code so the user-provided shape
+		// is what the spec advertises.
+		for _, errInst := range op.Options.Errors {
+			if errInst == nil {
+				continue
+			}
+			code, response := buildErrorResponse(errInst)
+			responses[statusCodeKey(code)] = response
 		}
 
 		enhancedOptions["responses"] = responses
@@ -947,35 +1049,34 @@ func Method[TInput any, TOutput any, TError any](
 		ErrorType:  reflect.TypeOf(errorZero),
 	})
 
+	inputType := reflect.TypeOf(inputZero)
+
 	// Wrapper
 	fiberHandler := func(c fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
-			// Check for authentication/authorization errors first
-			if authErr, ok := errors.AsType[*AuthError](err); ok {
-				if app.config.AuthErrorHandler != nil {
-					return app.config.AuthErrorHandler(c, authErr)
-				}
-				errType := "authentication_error"
-				if authErr.StatusCode == 403 {
-					errType = "authorization_error"
-				}
-				return c.Status(authErr.StatusCode).JSON(ErrorResponse{
-					Code:    authErr.StatusCode,
-					Details: authErr.Message,
-					Type:    errType,
-				})
+			// Custom handlers, when configured, still take precedence and receive
+			// the raw error — they may produce any shape they want.
+			if authErr, ok := errors.AsType[*AuthError](err); ok && app.config.AuthErrorHandler != nil {
+				return app.config.AuthErrorHandler(c, authErr)
 			}
-			// Use custom validation error handler if configured
 			if app.config.ValidationErrorHandler != nil {
 				return app.config.ValidationErrorHandler(c, err)
 			}
-			// Default validation error response
-			return c.Status(400).JSON(ErrorResponse{
-				Code:    400,
-				Details: err.Error(),
-				Type:    "validation_error",
-			})
+			// If the user opted into a unified shape, emit it for parse / auth /
+			// generic errors. Validation errors keep the rich ErrorEnvelope shape
+			// regardless — collapsing a multi-field validation failure into a
+			// single flat struct would lose the per-field info (loc / constraint
+			// / field) that clients rely on for form-level UX.
+			if app.config.DefaultErrorShape != nil && !isValidationError(err) {
+				cat := categorizeError(err)
+				return c.Status(cat.Code).JSON(materializeError(app.config.DefaultErrorShape, cat))
+			}
+			// Default response: structured envelope, one entry per failing field,
+			// status code chosen per error category (422 validation, 400 parse,
+			// 401/403 auth).
+			envelope, status := buildEnvelope(c, app.config, inputType, err)
+			return c.Status(status).JSON(envelope)
 		}
 
 		output, customErr := handler(c, input)

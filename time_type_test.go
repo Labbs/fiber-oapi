@@ -315,7 +315,9 @@ func TestTimeTypeAsTopLevelErrorBody(t *testing.T) {
 	}
 
 	post := spec["paths"].(map[string]interface{})["/timestamp-error"].(map[string]interface{})["post"].(map[string]interface{})
-	errSchema := post["responses"].(map[string]interface{})["400"].(map[string]interface{})["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
+	// Custom TError schemas are now emitted under "4XX" so the dedicated 400/422 entries
+	// can carry the default ErrorEnvelope schema with their structured examples.
+	errSchema := post["responses"].(map[string]interface{})["4XX"].(map[string]interface{})["content"].(map[string]interface{})["application/json"].(map[string]interface{})["schema"].(map[string]interface{})
 
 	if _, hasRef := errSchema["$ref"]; hasRef {
 		t.Errorf("Expected top-level time.Time error body to be inlined, got $ref: %v", errSchema["$ref"])

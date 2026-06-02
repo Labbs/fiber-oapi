@@ -258,14 +258,14 @@ func TestDeleteOApi_Validation(t *testing.T) {
 		{
 			name:           "Invalid category UUID",
 			url:            "/categories/invalid-uuid/products/550e8400-e29b-41d4-a716-446655440001",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "uuid4",
 		},
 		{
 			name:           "Invalid product UUID",
 			url:            "/categories/550e8400-e29b-41d4-a716-446655440000/products/invalid-uuid",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "uuid4",
 		},
@@ -284,14 +284,14 @@ func TestDeleteOApi_Validation(t *testing.T) {
 		{
 			name:           "Reason too short",
 			url:            "/users/user123?reason=bad",
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "min",
 		},
 		{
 			name:           "Reason too long",
 			url:            fmt.Sprintf("/users/user123?reason=%s", strings.Repeat("a", 101)),
-			expectedStatus: 400,
+			expectedStatus: 422,
 			shouldPass:     false,
 			errorContains:  "max",
 		},

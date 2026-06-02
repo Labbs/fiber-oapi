@@ -111,16 +111,18 @@ func TestDefaultValidationErrorWhenNoCustomHandler(t *testing.T) {
 
 	resp, err := app.Test(req)
 	assert.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+	assert.Equal(t, fiber.StatusUnprocessableEntity, resp.StatusCode)
 
-	// Verify default error structure (ErrorResponse)
+	// Verify default error envelope shape
 	body, _ := io.ReadAll(resp.Body)
-	var defaultErr ErrorResponse
-	err = json.Unmarshal(body, &defaultErr)
+	var envelope ErrorEnvelope
+	err = json.Unmarshal(body, &envelope)
 	assert.NoError(t, err)
-	assert.Equal(t, 400, defaultErr.Code)
-	assert.Equal(t, "validation_error", defaultErr.Type)
-	assert.NotEmpty(t, defaultErr.Details)
+	assert.Len(t, envelope.Errors, 1)
+	assert.Equal(t, "validation_error", envelope.Errors[0].Type)
+	assert.Equal(t, 422, envelope.Errors[0].Code)
+	assert.NotEmpty(t, envelope.Errors[0].Msg)
+	assert.Equal(t, "name", envelope.Errors[0].Field)
 }
 
 func TestCustomValidationErrorHandlerWithDisabledDocs(t *testing.T) {
@@ -288,7 +290,7 @@ func TestAuthErrorHandlerOnlyDoesNotDisableDefaults(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := app.Test(req)
 	assert.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode, "Validation should be enabled when only AuthErrorHandler is configured")
+	assert.Equal(t, fiber.StatusUnprocessableEntity, resp.StatusCode, "Validation should be enabled when only AuthErrorHandler is configured")
 
 	// OpenAPI docs should still be enabled (default true)
 	req = httptest.NewRequest("GET", "/docs", nil)
