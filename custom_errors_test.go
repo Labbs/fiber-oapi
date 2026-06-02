@@ -213,7 +213,7 @@ func TestCustomErrors_NilErrorReturnsSuccess(t *testing.T) {
 	assert.Equal(t, "ok", out.Message)
 }
 
-// LegacyTError is a non-empty struct used to exercise the TError catch-all
+// legacyTError is a non-empty struct used to exercise the TError catch-all
 // behaviour in the next two tests.
 type legacyTError struct {
 	Code    int    `json:"code"`
@@ -244,6 +244,28 @@ func TestCustomErrors_Suppresses4XXWhenErrorsDeclared(t *testing.T) {
 	_, has409 := responses["409"]
 	_, has404 := responses["404"]
 	assert.True(t, has409 && has404, "the explicit Errors entries must still surface")
+}
+
+func TestCustomErrors_4XXStillEmittedWhenErrorsSliceOnlyContainsNils(t *testing.T) {
+	// Edge case: Errors: []any{nil} should be treated as "nothing declared",
+	// not as "errors declared". The downstream emission loop skips nil entries,
+	// so if we suppressed the 4XX based on slice length the route would end up
+	// with zero documented error responses at all.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/items/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{
+		OperationID: "createItem",
+		Errors:      []any{nil, nil},
+	})
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/items/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	_, has4xx := responses["4XX"]
+	assert.True(t, has4xx, "4XX must still be emitted when the Errors slice contains only nil entries")
 }
 
 func TestCustomErrors_4XXStillEmittedWhenNoErrorsDeclared(t *testing.T) {

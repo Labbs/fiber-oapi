@@ -403,10 +403,13 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// Emitted as a 4XX catch-all so legacy users who do not declare per-status
 		// entries via OpenAPIOptions.Errors still get their domain error documented.
 		//
-		// When the route DOES declare Errors, the 4XX is redundant (and worse,
-		// misleading): the user has explicitly enumerated the status codes their
-		// handler can emit, so the catch-all just pollutes the spec. Skip it.
-		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) && len(op.Options.Errors) == 0 {
+		// When the route DOES declare at least one non-nil Errors entry, the 4XX
+		// is redundant (and worse, misleading): the user has explicitly enumerated
+		// the status codes their handler can emit, so the catch-all just pollutes
+		// the spec. Count non-nil entries — a slice that only contains nil is
+		// equivalent to no declaration since the emission loop below would skip
+		// every entry, leaving the route with zero documented error responses.
+		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) && !hasNonNilErrorEntry(op.Options.Errors) {
 			errorType := dereferenceType(op.ErrorType)
 
 			var schemaRef map[string]interface{}

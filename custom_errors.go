@@ -139,6 +139,19 @@ func statusCodeKey(code int) string {
 	return strconv.Itoa(code)
 }
 
+// hasNonNilErrorEntry reports whether the slice contains at least one non-nil
+// entry. A slice of only nils is treated as "no errors declared" since the
+// spec-generation loop skips nil entries — counting them as a declaration
+// would suppress the 4XX catch-all without emitting any replacement.
+func hasNonNilErrorEntry(errors []any) bool {
+	for _, e := range errors {
+		if e != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // errorCategory groups the inputs needed to materialise a user-defined error
 // shape from a library-internal error. The category is what we know about the
 // error before we know what shape the user wants.
