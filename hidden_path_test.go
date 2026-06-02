@@ -43,15 +43,18 @@ func TestHidden_RouteServesTrafficButAbsentFromSpec(t *testing.T) {
 	// Runtime: both routes serve traffic.
 	respHidden, err := app.Test(httptest.NewRequest("GET", "/admin/debug/abc", nil))
 	require.NoError(t, err)
+	defer respHidden.Body.Close()
 	require.Equal(t, 200, respHidden.StatusCode)
-	body, _ := io.ReadAll(respHidden.Body)
+	body, err := io.ReadAll(respHidden.Body)
+	require.NoError(t, err)
 	var got hiddenOutput
 	require.NoError(t, json.Unmarshal(body, &got))
 	assert.Equal(t, "debug abc", got.Message)
 
 	respPublic, err := app.Test(httptest.NewRequest("GET", "/public/xyz", nil))
 	require.NoError(t, err)
-	assert.Equal(t, 200, respPublic.StatusCode)
+	defer respPublic.Body.Close()
+	require.Equal(t, 200, respPublic.StatusCode)
 
 	// Spec: only the public path appears.
 	spec := oapi.GenerateOpenAPISpec()
