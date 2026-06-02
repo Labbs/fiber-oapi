@@ -198,12 +198,11 @@ func translateValidatorTag(field, tag, param string) string {
 	case "required":
 		return fmt.Sprintf("field '%s' is required", field)
 	case "min":
-		return fmt.Sprintf("field '%s' must be at least %s characters long", field, param)
+		return fmt.Sprintf("field '%s' must be at least %s", field, param)
 	case "max":
-		return fmt.Sprintf("field '%s' must be at most %s characters long", field, param)
+		return fmt.Sprintf("field '%s' must be at most %s", field, param)
 	case "len":
-		return fmt.Sprintf("field '%s' must be exactly %s characters long", field, param)
-	case "email":
+		return fmt.Sprintf("field '%s' must be exactly %s", field, param)
 		return fmt.Sprintf("field '%s' must be a valid email address", field)
 	case "url":
 		return fmt.Sprintf("field '%s' must be a valid URL", field)
