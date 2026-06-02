@@ -215,8 +215,10 @@ if you want each entry to carry a `value` field.
 The OpenAPI spec exposes `ErrorEnvelope` / `ValidationErrorEntry` / `ResponseContext`
 under `components.schemas` and adds a 422 response with a realistic example to
 every operation, plus a 400 example for body-carrying methods. Routes that
-declare a non-empty `TError` keep their domain shape under the catch-all `4XX`
-response.
+declare a non-empty `TError` and no per-status `OpenAPIOptions.Errors` keep their
+domain shape under the catch-all `4XX` response — as soon as the route declares
+explicit `Errors` entries the catch-all is suppressed and only the enumerated
+status codes appear in the spec.
 
 If you need a different shape, set `Config.ValidationErrorHandler` / `Config.AuthErrorHandler`
 — they receive the raw error (JSON type mismatches are wrapped so `err.Error()`
