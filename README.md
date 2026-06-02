@@ -220,6 +220,29 @@ domain shape under the catch-all `4XX` response — as soon as the route declare
 explicit `Errors` entries the catch-all is suppressed and only the enumerated
 status codes appear in the spec.
 
+#### Opting out of all default error responses
+
+Some endpoints — health checks, readiness probes, anything with no body or no
+error contract — don't need the framework's 400 / 422 / 404 / 4XX in the spec.
+Pass an explicit empty `Errors` slice to suppress every default and document
+only the 200 success path:
+
+```go
+fiberoapi.Get(oapi, "/health",
+    func(c fiber.Ctx, _ struct{}) (HealthStatus, struct{}) {
+        return HealthStatus{Status: "ok"}, struct{}{}
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary: "Liveness probe",
+        Errors:  []any{}, // ← explicit "no errors for this route"
+    },
+)
+```
+
+The distinction matters: `Errors: nil` (the zero value) keeps the defaults,
+`Errors: []any{}` (an explicitly empty slice) suppresses them. A slice that
+contains only nil entries is treated as nil for back-compat.
+
 If you need a different shape, set `Config.ValidationErrorHandler` / `Config.AuthErrorHandler`
 — they receive the raw error (JSON type mismatches are wrapped so `err.Error()`
 stays friendly, but `var ute *json.UnmarshalTypeError; errors.As(err, &ute)` still recovers

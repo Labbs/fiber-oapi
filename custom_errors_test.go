@@ -286,6 +286,77 @@ func TestCustomErrors_4XXStillEmittedWhenNoErrorsDeclared(t *testing.T) {
 	assert.True(t, has4xx, "4XX must still be emitted when no Errors[] is declared (legacy behaviour)")
 }
 
+func TestCustomErrors_EmptyErrorsSliceSuppressesAllDefaults(t *testing.T) {
+	// Passing Errors: []any{} (non-nil, length 0) is the explicit opt-out
+	// signal. The route should expose ONLY its 200 success response — no
+	// framework-emitted 400 / 422 / 404 / 4XX. Useful for /health-style
+	// endpoints that have no error contract.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/health", func(c fiber.Ctx, _ struct{}) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "alive"}, nil
+	}, OpenAPIOptions{
+		OperationID: "health",
+		Errors:      []any{},
+	})
+	oapi.UseNotFoundHandler() // would normally add 404 — must NOT for this route
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/health"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	_, has200 := responses["200"]
+	assert.True(t, has200, "200 success response must remain")
+	for _, code := range []string{"400", "404", "422", "4XX"} {
+		_, has := responses[code]
+		assert.False(t, has, "%s must be suppressed when Errors is an explicit empty slice", code)
+	}
+	assert.Len(t, responses, 1, "only 200 should appear, got %d responses", len(responses))
+}
+
+func TestCustomErrors_NilErrorsKeepsAllDefaults(t *testing.T) {
+	// Sanity / regression: the OPT-OUT behaviour is gated on a non-nil empty
+	// slice. Leaving Errors at its zero value (nil) keeps every framework
+	// default — this is what every existing user expects.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/items/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{OperationID: "createItem"})
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/items/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	for _, code := range []string{"200", "400", "422", "4XX"} {
+		_, has := responses[code]
+		assert.True(t, has, "%s must remain when Errors is nil", code)
+	}
+}
+
+func TestCustomErrors_OnlyNilEntriesKeepsDefaults(t *testing.T) {
+	// Edge case revisited: `Errors: []any{nil, nil}` — a non-empty slice with
+	// no real entries — is still treated as "nothing declared", same as nil.
+	// Only an explicitly empty []any{} triggers the suppression.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/items/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{
+		OperationID: "createItem",
+		Errors:      []any{nil, nil},
+	})
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/items/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	_, has422 := responses["422"]
+	_, has4XX := responses["4XX"]
+	assert.True(t, has422, "422 default must remain when Errors contains only nil entries")
+	assert.True(t, has4XX, "4XX legacy must remain when Errors contains only nil entries")
+}
+
 func TestCustomErrors_PrecedenceOverDefault404Envelope(t *testing.T) {
 	// When the user declares a 404 in Errors AND has called UseNotFoundHandler(),
 	// the declared shape (their AppError) wins for the per-route spec entry —

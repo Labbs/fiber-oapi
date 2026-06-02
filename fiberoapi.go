@@ -399,6 +399,17 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			}
 		}
 
+		// A route can opt out of every framework-emitted error response (the 4XX
+		// catch-all, 400 parse, 422 validation, 404 not-found) by passing an
+		// explicit empty slice — `Errors: []any{}`. This is the canonical way
+		// to document an endpoint like /health that has no error contract at all.
+		//
+		// We distinguish nil (field not set → default behaviour) from a non-nil
+		// empty slice (user explicitly says "no errors"). A slice with only nil
+		// entries still counts as "not declared" — same reasoning as the legacy
+		// 4XX guard below.
+		suppressAllDefaultErrors := op.Options.Errors != nil && len(op.Options.Errors) == 0
+
 		// Custom TError response — only when the handler returns a non-empty TError.
 		// Emitted as a 4XX catch-all so legacy users who do not declare per-status
 		// entries via OpenAPIOptions.Errors still get their domain error documented.
@@ -409,7 +420,7 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// the spec. Count non-nil entries — a slice that only contains nil is
 		// equivalent to no declaration since the emission loop below would skip
 		// every entry, leaving the route with zero documented error responses.
-		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) && !hasNonNilErrorEntry(op.Options.Errors) {
+		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) && !hasNonNilErrorEntry(op.Options.Errors) && !suppressAllDefaultErrors {
 			errorType := dereferenceType(op.ErrorType)
 
 			var schemaRef map[string]interface{}
@@ -450,44 +461,49 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			}
 		}
 
-		// 422 always uses ErrorEnvelope so per-field info (loc / constraint /
-		// field / value) stays first-class for clients building form-level UX,
-		// even when DefaultErrorShape is set for the other error categories.
-		responses["422"] = map[string]interface{}{
-			"description": "Validation error",
-			"content": map[string]interface{}{
-				"application/json": map[string]interface{}{
-					"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
-					"example": exampleValidationEnvelope(),
+		// All three default envelope responses (422 validation, 400 parse,
+		// 404 not-found) honour the opt-out so a /health-style endpoint can
+		// document just its 200.
+		if !suppressAllDefaultErrors {
+			// 422 always uses ErrorEnvelope so per-field info (loc / constraint /
+			// field / value) stays first-class for clients building form-level UX,
+			// even when DefaultErrorShape is set for the other error categories.
+			responses["422"] = map[string]interface{}{
+				"description": "Validation error",
+				"content": map[string]interface{}{
+					"application/json": map[string]interface{}{
+						"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
+						"example": exampleValidationEnvelope(),
+					},
 				},
-			},
-		}
-		// Only POST/PUT/PATCH can produce JSON parse / type-mismatch errors.
-		// The 400 covers both syntactically-malformed bodies and well-formed
-		// bodies whose fields have the wrong JSON type — the example uses the
-		// type-mismatch form because it's the most common in practice and the
-		// most useful to show clients.
-		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
-			responses["400"] = map[string]interface{}{
-				"description": "Invalid request body (malformed JSON or wrong field type)",
-				"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
-					Code:    400,
-					Type:    errTypeTypeMismatch,
-					Message: fmt.Sprintf(typeMismatchMsgFmt, "age", "int", "string"),
-					Details: "int",
-				}, exampleParseEnvelope)},
 			}
-		}
-		// When UseNotFoundHandler() has been installed, every operation can
-		// surface the same shape under 404 — document it.
-		if o.notFoundInstalled {
-			responses["404"] = map[string]interface{}{
-				"description":             "Route not found",
-				"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
-					Code:    404,
-					Type:    errTypeNotFound,
-					Message: "no route matches GET /users/42",
-				}, exampleNotFoundEnvelope)},
+			// Only POST/PUT/PATCH can produce JSON parse / type-mismatch errors.
+			// The 400 covers both syntactically-malformed bodies and well-formed
+			// bodies whose fields have the wrong JSON type — the example uses the
+			// type-mismatch form because it's the most common in practice and the
+			// most useful to show clients.
+			if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
+				responses["400"] = map[string]interface{}{
+					"description": "Invalid request body (malformed JSON or wrong field type)",
+					"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
+						Code:    400,
+						Type:    errTypeTypeMismatch,
+						Message: fmt.Sprintf(typeMismatchMsgFmt, "age", "int", "string"),
+						Details: "int",
+					}, exampleParseEnvelope)},
+				}
+			}
+			// When UseNotFoundHandler() has been installed, every operation can
+			// surface the same shape under 404 — document it.
+			if o.notFoundInstalled {
+				responses["404"] = map[string]interface{}{
+					"description": "Route not found",
+					"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
+						Code:    404,
+						Type:    errTypeNotFound,
+						Message: "no route matches GET /users/42",
+					}, exampleNotFoundEnvelope)},
+				}
 			}
 		}
 		// Per-route custom errors declared via OpenAPIOptions.Errors. Each instance
