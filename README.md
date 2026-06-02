@@ -220,6 +220,27 @@ domain shape under the catch-all `4XX` response — as soon as the route declare
 explicit `Errors` entries the catch-all is suppressed and only the enumerated
 status codes appear in the spec.
 
+#### Hiding a route from the spec entirely
+
+Some routes — internal admin endpoints, debug handlers, in-progress features —
+serve traffic but shouldn't appear in the published spec. Set
+`OpenAPIOptions.Hidden = true`:
+
+```go
+fiberoapi.Get(oapi, "/admin/debug/:id",
+    controller.Debug,
+    fiberoapi.OpenAPIOptions{
+        OperationID: "internalDebug",
+        Hidden:      true, // ← serves traffic, absent from /openapi.json
+    },
+)
+```
+
+The path entry is omitted and any type only referenced by hidden routes is
+skipped from `components.schemas` (so reading the spec doesn't leak the shape
+of internal endpoints). Types used by both hidden and visible routes still
+surface — the visible route needs them.
+
 #### Opting out of all default error responses
 
 Some endpoints — health checks, readiness probes, anything with no body or no

@@ -227,6 +227,12 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	allTypes := make(map[string]reflect.Type)
 
 	for _, op := range o.operations {
+		// Hidden operations contribute neither to the spec paths nor to the
+		// schemas index, so a type only ever referenced by a hidden route does
+		// not leak as a public component.
+		if op.Options.Hidden {
+			continue
+		}
 		if op.InputType != nil {
 			collectAllTypes(op.InputType, allTypes)
 		}
@@ -272,6 +278,11 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	}
 
 	for _, op := range o.operations {
+		// Skip hidden operations entirely — the route still serves traffic,
+		// it just is not advertised in the generated spec.
+		if op.Options.Hidden {
+			continue
+		}
 		// Convert Fiber path format (:param) to OpenAPI format ({param})
 		openAPIPath := convertFiberPathToOpenAPI(op.Path)
 
