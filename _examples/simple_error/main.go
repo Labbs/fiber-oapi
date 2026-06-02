@@ -98,6 +98,6 @@ func main() {
 
 	oapi.UseNotFoundHandler()
 
-	fmt.Println("🚀 :3000  docs: /docs  spec: /openapi.json")
+	fmt.Println("🚀 :3000  docs: /documentation  spec: /api-spec.json")
 	app.Listen(":3000")
 }
