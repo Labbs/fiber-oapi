@@ -151,6 +151,38 @@ func TestOpenAPIInfoConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("Info field + explicit disable + core signal propagates booleans", func(t *testing.T) {
+		// With a core signal (AuthService here) booleans from `provided` are honored,
+		// so the explicit EnableOpenAPIDocs:false actually disables auto docs even
+		// though the user also customized the title.
+		authService := &struct{ AuthorizationService }{}
+		oapi := New(fiber.New(), Config{
+			OpenAPITitle:      "Custom",
+			EnableOpenAPIDocs: false,
+			AuthService:       authService,
+		})
+		cfg := oapi.Config()
+		if cfg.EnableOpenAPIDocs {
+			t.Error("EnableOpenAPIDocs should be false when explicitly disabled alongside a core signal")
+		}
+		if cfg.OpenAPITitle != "Custom" {
+			t.Errorf("title = %q", cfg.OpenAPITitle)
+		}
+	})
+
+	t.Run("Info-only config keeps boolean defaults", func(t *testing.T) {
+		// Without any core signal, info-only customization must not silently flip
+		// EnableValidation / EnableOpenAPIDocs to false via Go's zero values.
+		oapi := New(fiber.New(), Config{OpenAPITitle: "Just Title"})
+		cfg := oapi.Config()
+		if !cfg.EnableValidation {
+			t.Error("EnableValidation should stay true when only cosmetic fields are set")
+		}
+		if !cfg.EnableOpenAPIDocs {
+			t.Error("EnableOpenAPIDocs should stay true when only cosmetic fields are set")
+		}
+	})
+
 	t.Run("Auto-served /openapi.json reflects custom info", func(t *testing.T) {
 		app := fiber.New()
 		New(app, Config{

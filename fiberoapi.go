@@ -38,13 +38,19 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		// We'll only override if the provided config appears to be intentionally configured
 
 		// Simple approach: if the provided config has any non-default values,
-		// we assume the user intended to configure it explicitly
+		// we assume the user intended to configure it explicitly.
+		// Info fields (title/description/version) participate in this signal too so that
+		// e.g. `Config{OpenAPITitle: "X", EnableOpenAPIDocs: false}` propagates the
+		// explicit `false` to the resolved config (consistency with path fields).
 		hasExplicitConfig := provided.EnableAuthorization ||
 			provided.AuthService != nil ||
 			provided.SecuritySchemes != nil ||
 			provided.OpenAPIDocsPath != "" ||
 			provided.OpenAPIJSONPath != "" ||
 			provided.OpenAPIYamlPath != "" ||
+			provided.OpenAPITitle != "" ||
+			provided.OpenAPIDescription != "" ||
+			provided.OpenAPIVersion != "" ||
 			provided.ValidationErrorHandler != nil ||
 			provided.AuthErrorHandler != nil
 
@@ -55,23 +61,32 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		// If no explicit config, keep the defaults (true, true, false)
 
-		// Heuristic: when only handler(s) are provided and all booleans are at zero value,
-		// assume the caller didn't intend to disable validation/docs — restore defaults.
-		otherExplicitConfig := provided.EnableAuthorization ||
+		// Heuristic: when only "metadata" fields (paths, info, handlers — i.e. cosmetic
+		// customization that does not signal intent about validation/docs themselves)
+		// are provided and all booleans are at their zero value, restore boolean defaults.
+		// This avoids surprising users who only want to override the spec title/path but
+		// end up with validation silently disabled because Go zero values can't disambiguate
+		// "not set" from "set to false". To actually disable validation or docs, set at least
+		// one core signal field too (EnableAuthorization / AuthService / SecuritySchemes).
+		hasCoreSignal := provided.EnableAuthorization ||
 			provided.AuthService != nil ||
-			provided.SecuritySchemes != nil ||
-			provided.OpenAPIDocsPath != "" ||
+			provided.SecuritySchemes != nil
+
+		hasMetadataOnly := !hasCoreSignal && (provided.OpenAPIDocsPath != "" ||
 			provided.OpenAPIJSONPath != "" ||
-			provided.OpenAPIYamlPath != ""
+			provided.OpenAPIYamlPath != "" ||
+			provided.OpenAPITitle != "" ||
+			provided.OpenAPIDescription != "" ||
+			provided.OpenAPIVersion != "" ||
+			provided.ValidationErrorHandler != nil ||
+			provided.AuthErrorHandler != nil)
 
 		// Only restore defaults if ALL boolean fields are false (suggesting they weren't explicitly set)
 		allBooleansAreFalse := !provided.EnableValidation && !provided.EnableOpenAPIDocs && !provided.EnableAuthorization
-		hasOnlyHandlers := (provided.ValidationErrorHandler != nil || provided.AuthErrorHandler != nil) && !otherExplicitConfig
 
-		if hasOnlyHandlers && allBooleansAreFalse {
-			// Only handler(s) are set, so restore defaults for boolean fields
-			cfg.EnableValidation = true   // Keep validation enabled - the handler needs it
-			cfg.EnableOpenAPIDocs = true  // Keep docs enabled - default behavior
+		if hasMetadataOnly && allBooleansAreFalse {
+			cfg.EnableValidation = true  // Restore — caller likely didn't mean to disable it
+			cfg.EnableOpenAPIDocs = true // Restore — caller likely didn't mean to disable it
 		}
 
 		// For EnableAuthorization: only set to true if explicitly provided
