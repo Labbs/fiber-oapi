@@ -84,11 +84,14 @@ func main() {
 
 	// Example 1: Using custom configuration
 	customConfig := fiberoapi.Config{
-		EnableValidation:  true,
-		EnableOpenAPIDocs: true,
-		OpenAPIDocsPath:   "/documentation", // Custom docs path
-		OpenAPIJSONPath:   "/api-spec.json", // Custom spec path
-		OpenAPIYamlPath:   "/api-spec.yaml", // Custom YAML spec path
+		EnableValidation:   true,
+		EnableOpenAPIDocs:  true,
+		OpenAPIDocsPath:    "/documentation",                          // Custom docs path
+		OpenAPIJSONPath:    "/api-spec.json",                          // Custom spec path
+		OpenAPIYamlPath:    "/api-spec.yaml",                          // Custom YAML spec path
+		OpenAPITitle:       "Simple Example API",                      // Spec title
+		OpenAPIDescription: "A minimal fiber-oapi demo for the README", // Spec description
+		OpenAPIVersion:     "0.1.0",                                   // Spec version
 	}
 	appOApi := fiberoapi.New(app, customConfig)
 	v1 := fiberoapi.Group(appOApi, "/api/v1")
