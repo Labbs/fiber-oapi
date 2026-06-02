@@ -177,7 +177,7 @@ type ErrorEnvelope struct {
 // authentication / authorization failures so clients only have to parse one
 // envelope.
 type ValidationErrorEntry struct {
-	Type       string `json:"type"`                 // validation_error | type_error | parse_error | authentication_error | authorization_error
+	Type       string `json:"type"`                 // validation_error | type_error | parse_error | authentication_error | authorization_error | not_found | method_not_allowed
 	Code       int    `json:"code"`                 // HTTP status code carried in the response
 	Loc        []any  `json:"loc"`                  // path to the field, e.g. ["body", "address", "zipcode"]
 	Field      string `json:"field,omitempty"`      // leaf field name, redundant with Loc but convenient
