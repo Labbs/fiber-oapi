@@ -220,7 +220,7 @@ response.
 
 If you need a different shape, set `Config.ValidationErrorHandler` / `Config.AuthErrorHandler`
 — they receive the raw error (JSON type mismatches are wrapped so `err.Error()`
-stays friendly, but `errors.As(err, &*json.UnmarshalTypeError{})` still recovers
+stays friendly, but `var ute *json.UnmarshalTypeError; errors.As(err, &ute)` still recovers
 the original).
 
 ### Unifying all errors under one shape (`DefaultErrorShape`)
