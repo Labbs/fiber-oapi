@@ -400,9 +400,16 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		}
 
 		// Custom TError response — only when the handler returns a non-empty TError.
-		// Emitted as a 4xx response separate from the default validation envelope so
-		// callers see both shapes in the spec.
-		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
+		// Emitted as a 4XX catch-all so legacy users who do not declare per-status
+		// entries via OpenAPIOptions.Errors still get their domain error documented.
+		//
+		// When the route DOES declare at least one non-nil Errors entry, the 4XX
+		// is redundant (and worse, misleading): the user has explicitly enumerated
+		// the status codes their handler can emit, so the catch-all just pollutes
+		// the spec. Count non-nil entries — a slice that only contains nil is
+		// equivalent to no declaration since the emission loop below would skip
+		// every entry, leaving the route with zero documented error responses.
+		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) && !hasNonNilErrorEntry(op.Options.Errors) {
 			errorType := dereferenceType(op.ErrorType)
 
 			var schemaRef map[string]interface{}

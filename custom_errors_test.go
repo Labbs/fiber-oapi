@@ -213,6 +213,79 @@ func TestCustomErrors_NilErrorReturnsSuccess(t *testing.T) {
 	assert.Equal(t, "ok", out.Message)
 }
 
+// legacyTError is a non-empty struct used to exercise the TError catch-all
+// behaviour in the next two tests.
+type legacyTError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func TestCustomErrors_Suppresses4XXWhenErrorsDeclared(t *testing.T) {
+	// When OpenAPIOptions.Errors is populated, the legacy 4XX catch-all is
+	// redundant — the user has explicitly enumerated which status codes their
+	// handler can emit. The spec should list ONLY those concrete codes.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/items/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{
+		OperationID: "createItem",
+		Errors:      []any{appConflict("a"), appNotFound("b")},
+	})
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/items/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	_, has4xx := responses["4XX"]
+	assert.False(t, has4xx, "4XX must be suppressed when Errors[] is non-empty")
+
+	// Sanity: the explicit codes are still there.
+	_, has409 := responses["409"]
+	_, has404 := responses["404"]
+	assert.True(t, has409 && has404, "the explicit Errors entries must still surface")
+}
+
+func TestCustomErrors_4XXStillEmittedWhenErrorsSliceOnlyContainsNils(t *testing.T) {
+	// Edge case: Errors: []any{nil} should be treated as "nothing declared",
+	// not as "errors declared". The downstream emission loop skips nil entries,
+	// so if we suppressed the 4XX based on slice length the route would end up
+	// with zero documented error responses at all.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/items/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{
+		OperationID: "createItem",
+		Errors:      []any{nil, nil},
+	})
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/items/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	_, has4xx := responses["4XX"]
+	assert.True(t, has4xx, "4XX must still be emitted when the Errors slice contains only nil entries")
+}
+
+func TestCustomErrors_4XXStillEmittedWhenNoErrorsDeclared(t *testing.T) {
+	// Backwards compatibility: routes whose handler declares a non-empty TError
+	// but provides no Errors[] entries still get the legacy 4XX catch-all so
+	// existing integrations are not silently broken.
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/items/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *legacyTError) {
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{OperationID: "createItem"})
+
+	spec := oapi.GenerateOpenAPISpec()
+	responses := spec["paths"].(map[string]any)["/items/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+
+	_, has4xx := responses["4XX"]
+	assert.True(t, has4xx, "4XX must still be emitted when no Errors[] is declared (legacy behaviour)")
+}
+
 func TestCustomErrors_PrecedenceOverDefault404Envelope(t *testing.T) {
 	// When the user declares a 404 in Errors AND has called UseNotFoundHandler(),
 	// the declared shape (their AppError) wins for the per-route spec entry —
