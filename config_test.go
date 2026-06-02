@@ -164,10 +164,14 @@ func TestOpenAPIInfoConfig(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Test error: %v", err)
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode != 200 {
 			t.Fatalf("status = %d", resp.StatusCode)
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read response body: %v", err)
+		}
 		var spec map[string]interface{}
 		if err := json.Unmarshal(body, &spec); err != nil {
 			t.Fatalf("invalid JSON: %v", err)
