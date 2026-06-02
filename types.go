@@ -108,6 +108,14 @@ type OpenAPIOptions struct {
 	RequiredPermissions []string         `json:"-"`                  // Ex: ["document:read", "workspace:admin"]
 	ResourceType        string           `json:"-"`                  // Type de ressource concernée
 
+	// Hidden, when true, excludes this operation from the generated OpenAPI
+	// spec. The route is still registered on the underlying fiber.App and
+	// serves traffic normally — it just does not appear under paths in the
+	// generated JSON/YAML and any type only used by hidden operations does
+	// not leak into components.schemas. Useful for internal admin endpoints,
+	// in-progress routes, or anything you want to ship without publishing.
+	Hidden bool `json:"-"`
+
 	// Errors declares the custom error responses this operation can emit. Each
 	// entry is an instance of any struct (or pointer-to-struct) describing one
 	// error case. The library inspects each entry to populate the generated
