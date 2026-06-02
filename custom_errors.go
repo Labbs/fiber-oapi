@@ -178,7 +178,7 @@ func categorizeError(err error) errorCategory {
 		if i := strings.LastIndex(field, "."); i >= 0 {
 			field = field[i+1:]
 		}
-		msg := fmt.Sprintf("invalid type for field '%s': expected %s but got %s", field, ute.Type.String(), ute.Value)
+		msg := fmt.Sprintf(typeMismatchMsgFmt, field, ute.Type.String(), ute.Value)
 		if field == "" {
 			msg = fmt.Sprintf("invalid JSON: expected %s but got %s", ute.Type.String(), ute.Value)
 		}

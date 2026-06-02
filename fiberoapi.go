@@ -247,6 +247,13 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		}
 	}
 
+	// When the user opted into a unified shape via Config.DefaultErrorShape, the
+	// per-operation responses below reference it by $ref. Make sure its schema
+	// (and any nested types) is collected so we never emit dangling references.
+	if o.config.DefaultErrorShape != nil {
+		collectAllTypes(reflect.TypeOf(o.config.DefaultErrorShape), allTypes)
+	}
+
 	// Second pass: generate all schemas
 	for typeName, typeInfo := range allTypes {
 		schemas[typeName] = generateSchema(typeInfo)
@@ -448,14 +455,19 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 				},
 			},
 		}
-		// Only POST/PUT/PATCH can produce JSON parse errors.
+		// Only POST/PUT/PATCH can produce JSON parse / type-mismatch errors.
+		// The 400 covers both syntactically-malformed bodies and well-formed
+		// bodies whose fields have the wrong JSON type — the example uses the
+		// type-mismatch form because it's the most common in practice and the
+		// most useful to show clients.
 		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
 			responses["400"] = map[string]interface{}{
-				"description":             "Malformed request body",
+				"description": "Invalid request body (malformed JSON or wrong field type)",
 				"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
 					Code:    400,
-					Type:    errTypeParse,
-					Message: "invalid type for field 'age': expected int but got string",
+					Type:    errTypeTypeMismatch,
+					Message: fmt.Sprintf(typeMismatchMsgFmt, "age", "int", "string"),
+					Details: "int",
 				}, exampleParseEnvelope)},
 			}
 		}

@@ -83,6 +83,46 @@ func TestEnvelope_MultiFieldValidation(t *testing.T) {
 	}
 }
 
+func TestEnvelope_TypeMismatch_NestedLocPreserved(t *testing.T) {
+	// Regression: when the failing field is inside a nested struct, the loc
+	// array must carry the full JSON path — not just ["body", "<leaf>"]. The
+	// previous implementation routed ute.Field through the Go-name resolver,
+	// which couldn't match JSON tag names and silently dropped intermediate
+	// segments.
+	type Address struct {
+		Zipcode string `json:"zipcode" validate:"required"`
+	}
+	type Person struct {
+		Name string  `json:"name" validate:"required"`
+		Addr Address `json:"address" validate:"required"`
+	}
+
+	app := fiber.New()
+	oapi := New(app)
+	Post(oapi, "/persons", func(c fiber.Ctx, in Person) (envelopeOutput, struct{}) {
+		return envelopeOutput{Message: "ok"}, struct{}{}
+	}, OpenAPIOptions{OperationID: "createPerson"})
+
+	// zipcode expects a string but receives a number → UnmarshalTypeError on
+	// the nested path "address.zipcode".
+	body := `{"name":"Alice","address":{"zipcode":12345}}`
+	req := httptest.NewRequest("POST", "/persons", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+	require.Equal(t, 400, resp.StatusCode)
+
+	raw, _ := io.ReadAll(resp.Body)
+	var env ErrorEnvelope
+	require.NoError(t, json.Unmarshal(raw, &env))
+	require.Len(t, env.Errors, 1)
+	entry := env.Errors[0]
+	assert.Equal(t, errTypeTypeMismatch, entry.Type)
+	assert.Equal(t, "zipcode", entry.Field)
+	// The whole JSON path must be preserved — body → address → zipcode.
+	assert.Equal(t, []any{"body", "address", "zipcode"}, entry.Loc, "nested JSON path segments must be preserved in loc")
+}
+
 func TestEnvelope_TypeMismatch(t *testing.T) {
 	app := registerEnvelopeRoute(t)
 
@@ -483,9 +523,11 @@ func TestEnvelope_OpenAPISpecExposesExamples(t *testing.T) {
 	require.NotNil(t, example["errors"])
 	require.NotNil(t, example["response_context"])
 
-	// 400 — parse envelope (only for POST/PUT/PATCH)
+	// 400 — parse / type-mismatch envelope (only for POST/PUT/PATCH). The
+	// description was widened to cover both malformed JSON and wrong-typed
+	// fields after the spec example was aligned with the runtime emission.
 	resp400 := responses["400"].(map[string]any)
-	assert.Equal(t, "Malformed request body", resp400["description"])
+	assert.Equal(t, "Invalid request body (malformed JSON or wrong field type)", resp400["description"])
 
 	// Components include the envelope schema
 	schemas := spec["components"].(map[string]any)["schemas"].(map[string]any)

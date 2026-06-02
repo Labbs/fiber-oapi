@@ -184,6 +184,37 @@ func TestDefaultErrorShape_PerRouteErrorsStillOverride(t *testing.T) {
 	assert.Equal(t, "#/components/schemas/ErrorEnvelope", schema422["$ref"])
 }
 
+func TestDefaultErrorShape_SchemaAlwaysRegistered(t *testing.T) {
+	// Regression: when DefaultErrorShape is set, the type must appear in
+	// components.schemas even if no operation declares an OpenAPIOptions.Errors
+	// entry that would otherwise have collected it — otherwise the $ref the
+	// spec emits for 400 / 404 / 405 / auth points at a missing component.
+	type SoloShape struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Type    string `json:"type"`
+	}
+
+	app := fiber.New()
+	oapi := New(app, Config{DefaultErrorShape: &SoloShape{}})
+	Post(oapi, "/u/:name", func(c fiber.Ctx, in uniInput) (uniOutput, error) {
+		return uniOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{OperationID: "createUser"})
+	oapi.UseNotFoundHandler()
+
+	spec := oapi.GenerateOpenAPISpec()
+	schemas := spec["components"].(map[string]any)["schemas"].(map[string]any)
+	_, has := schemas["SoloShape"]
+	assert.True(t, has, "DefaultErrorShape's type must be registered in components.schemas; otherwise the 400/404 $refs dangle")
+
+	// Cross-check that the dangling reference would have actually triggered:
+	// confirm at least one response references it.
+	post := spec["paths"].(map[string]any)["/u/{name}"].(map[string]any)["post"].(map[string]any)
+	r400 := post["responses"].(map[string]any)["400"].(map[string]any)
+	schema := r400["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	assert.Equal(t, "#/components/schemas/SoloShape", schema["$ref"])
+}
+
 func TestDefaultErrorShape_ValueShape(t *testing.T) {
 	// Passing a non-pointer struct as the template should also work. We exercise
 	// the path-not-found case (404) since 422 deliberately keeps the envelope.

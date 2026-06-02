@@ -72,6 +72,13 @@ const (
 	errTypeNotFound     = "not_found"
 )
 
+// typeMismatchMsgFmt is the canonical format string used to render the human
+// message for a *json.UnmarshalTypeError. Shared by buildEnvelope (runtime),
+// wrapJSONTypeError (custom ValidationErrorHandler path), categorizeError
+// (DefaultErrorShape runtime) and exampleParseEnvelope (spec example) so the
+// four cannot drift apart silently.
+const typeMismatchMsgFmt = "invalid type for field '%s': expected %s but got %s"
+
 // locResolverCache memoises per-type loc resolvers so error formatting does not
 // pay the reflection cost on every request.
 var locResolverCache sync.Map // map[reflect.Type]*locResolver
@@ -182,7 +189,7 @@ func wrapJSONTypeError(err error) error {
 	if i := strings.LastIndex(field, "."); i >= 0 {
 		field = field[i+1:]
 	}
-	msg := fmt.Sprintf("invalid type for field '%s': expected %s but got %s", field, ute.Type.String(), ute.Value)
+	msg := fmt.Sprintf(typeMismatchMsgFmt, field, ute.Type.String(), ute.Value)
 	if field == "" {
 		msg = fmt.Sprintf("invalid JSON: expected %s but got %s", ute.Type.String(), ute.Value)
 	}
@@ -257,19 +264,25 @@ func buildEnvelope(c fiber.Ctx, cfg Config, inputType reflect.Type, err error) (
 		}, status
 	}
 
-	// JSON type mismatch — single entry, 400 Bad Request.
+	// JSON type mismatch — single entry, 400 Bad Request. ute.Field is already a
+	// dotted JSON path (e.g. "user.address.zipcode"), so build loc straight from
+	// its segments. Routing through the validator-namespace resolver here would
+	// fail: that resolver calls FieldByName which expects Go names like
+	// "Zipcode", not the JSON-tag names produced by the json decoder.
 	if ute, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
-		fieldName := ute.Field
-		if i := strings.LastIndex(fieldName, "."); i >= 0 {
-			fieldName = fieldName[i+1:]
+		loc := []any{"body"}
+		var fieldName string
+		if ute.Field != "" {
+			segs := strings.Split(ute.Field, ".")
+			for _, seg := range segs {
+				if seg == "" {
+					continue
+				}
+				loc = append(loc, seg)
+			}
+			fieldName = segs[len(segs)-1]
 		}
-		loc, _ := resolver.resolve(strings.ReplaceAll(ute.Field, ".", "."))
-		// resolver works on Go names; UnmarshalTypeError gives JSON names with dots,
-		// so when no match is found it just produces ["body"]. Append the leaf for clarity.
-		if len(loc) == 1 && fieldName != "" {
-			loc = append(loc, fieldName)
-		}
-		msg := fmt.Sprintf("invalid type for field '%s': expected %s but got %s", fieldName, ute.Type.String(), ute.Value)
+		msg := fmt.Sprintf(typeMismatchMsgFmt, fieldName, ute.Type.String(), ute.Value)
 		if fieldName == "" {
 			msg = fmt.Sprintf("invalid JSON: expected %s but got %s", ute.Type.String(), ute.Value)
 		}
@@ -545,7 +558,7 @@ func exampleParseEnvelope() ErrorEnvelope {
 			Code:       statusParseError,
 			Loc:        []any{"body", "age"},
 			Field:      "age",
-			Msg:        "expected int but got string",
+			Msg:        fmt.Sprintf(typeMismatchMsgFmt, "age", "int", "string"),
 			Constraint: "int",
 		}},
 		ResponseContext: ResponseContext{ResponseID: "bf0e9029-576b-42e8-84f9-ad0622972f50"},
