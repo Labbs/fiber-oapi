@@ -90,7 +90,9 @@ type Config struct {
 	// Note: 422 validation responses intentionally keep the rich ErrorEnvelope
 	// shape (one entry per failing field) even when DefaultErrorShape is set.
 	// Leaving DefaultErrorShape nil keeps the default ErrorEnvelope everywhere.
-	IncludeInvalidValueInErrors bool                 // Include offending value in default error envelope (default: false — may leak secrets)
+	DefaultErrorShape any
+
+	IncludeInvalidValueInErrors bool // Include offending value in default error envelope (default: false — may leak secrets)
 }
 
 // OpenAPIOptions represents options for OpenAPI operations
