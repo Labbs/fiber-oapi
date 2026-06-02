@@ -351,11 +351,15 @@ func constraintString(tag, param string) string {
 func exampleValidationEnvelope() ErrorEnvelope {
 	return ErrorEnvelope{
 		Errors: []ValidationErrorEntry{{
-			Type:       errTypeValidation,
-			Code:       statusValidationError,
-			Loc:        []any{"body", "workspaceId"},
+			Type: errTypeValidation,
+			Code: statusValidationError,
+			Loc:  []any{"body", "workspaceId"},
+			// Routing through translateValidatorTag (the same function the
+			// runtime calls) keeps the spec example wording perfectly aligned
+			// with what clients will receive — no risk of drift if either side
+			// changes the wording later.
 			Field:      "workspaceId",
-			Msg:        "field 'workspaceId' must be at least 11 characters long",
+			Msg:        translateValidatorTag("workspaceId", "min", "11"),
 			Constraint: "min=11",
 		}},
 		ResponseContext: ResponseContext{ResponseID: "bf0e9029-576b-42e8-84f9-ad0622972f50"},

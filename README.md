@@ -177,7 +177,7 @@ failing field:
       "code": 422,
       "loc": ["body", "workspaceId"],
       "field": "workspaceId",
-      "msg": "field 'workspaceId' must be at least 11 characters long",
+      "msg": "field 'workspaceId' must be at least 11",
       "constraint": "min=11"
     },
     {
@@ -185,7 +185,7 @@ failing field:
       "code": 422,
       "loc": ["body", "nested", "slug"],
       "field": "slug",
-      "msg": "field 'slug' must be at least 2 characters long",
+      "msg": "field 'slug' must be at least 2",
       "constraint": "min=2"
     }
   ],

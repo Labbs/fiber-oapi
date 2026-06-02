@@ -215,9 +215,13 @@ func categorizeError(err error) errorCategory {
 
 // materializeError builds a new instance of the user's DefaultErrorShape with
 // reflection-populated fields. The shape parameter is a template (typically the
-// empty value the user stored in Config.DefaultErrorShape). Returns the new
-// instance — same kind as shape (struct or pointer-to-struct) — or nil if the
-// shape is not a struct.
+// empty value the user stored in Config.DefaultErrorShape).
+//
+// Returns:
+//   - the new instance (same kind as shape — struct or pointer-to-struct) when
+//     the shape's underlying type is a struct;
+//   - the shape value unchanged when it is not a struct (no fields to populate);
+//   - nil only when shape itself is nil.
 //
 // Field assignments (case-sensitive, applied if present and settable):
 //   - StatusCode, Code  → cat.Code
