@@ -114,28 +114,24 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	return input, nil
 }
 
-// Function to handle custom errors
+// handleCustomError emits the error instance a handler returned through its
+// TError, with the status that instance carries.
+//
+// The status resolution is extractErrorStatusCode — the very same one the spec
+// generator uses for the entries of OpenAPIOptions.Errors. It used to be
+// duplicated here as a StatusCode/Code field lookup, which silently left out the
+// HTTPStatus() method: an error type that carries its code somewhere the
+// reflection cannot reach (nested in a slice of per-field errors, say) and
+// exposes it through the interface was documented under its real status and then
+// served as 500. Runtime and spec must not disagree about the same instance.
 func handleCustomError(c fiber.Ctx, customErr interface{}) error {
-	// Use reflection to extract error information
-	errValue := reflect.ValueOf(customErr)
-
-	// Handle pointers - get the element they point to
-	if errValue.Kind() == reflect.Ptr {
-		if errValue.IsNil() {
-			return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
-		}
-		errValue = errValue.Elem()
+	// A typed nil pointer carries nothing to serialize, so it cannot say anything
+	// about its own status either.
+	if v := reflect.ValueOf(customErr); v.Kind() == reflect.Ptr && v.IsNil() {
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
 	}
 
-	// Assume your error struct has fields like StatusCode and Message
-	statusCode := 500 // default
-	if errValue.Kind() == reflect.Struct {
-		if field := errValue.FieldByName("StatusCode"); field.IsValid() && field.CanInt() {
-			statusCode = int(field.Int())
-		} else if field := errValue.FieldByName("Code"); field.IsValid() && field.CanInt() {
-			statusCode = int(field.Int())
-		}
-	}
+	statusCode := extractErrorStatusCode(customErr)
 
 	// Return the error as JSON
 	if err := c.Status(statusCode).JSON(customErr); err != nil {

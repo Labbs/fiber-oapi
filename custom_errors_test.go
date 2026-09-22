@@ -378,3 +378,80 @@ func TestCustomErrors_PrecedenceOverDefault404Envelope(t *testing.T) {
 	schema := resp404["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
 	assert.Equal(t, "#/components/schemas/AppError", schema["$ref"], "Errors entry should override the default ErrorEnvelope 404")
 }
+
+// envelopeError is the shape an API ends up with when it answers with a list of
+// errors rather than a flat one: the status lives in the first entry, out of
+// reach of a field lookup, and is exposed through HTTPStatus(). The spec
+// generator has always honoured that method; the runtime re-implemented its own
+// StatusCode/Code field lookup and did not, so such an error was documented
+// under its real status and served as 500.
+type envelopeError struct {
+	Errors []envelopeEntry `json:"errors"`
+}
+
+type envelopeEntry struct {
+	Code    int    `json:"code"`
+	Details string `json:"details"`
+}
+
+func (e *envelopeError) HTTPStatus() int {
+	if len(e.Errors) > 0 && e.Errors[0].Code > 0 {
+		return e.Errors[0].Code
+	}
+	return 500
+}
+
+func envelopeNotFound() *envelopeError {
+	return &envelopeError{Errors: []envelopeEntry{{Code: 404, Details: "not found"}}}
+}
+
+func TestCustomErrors_HandlerReturnHonoursHTTPStatusMethod(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/envelope/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *envelopeError) {
+		return customErrOutput{}, envelopeNotFound()
+	}, OpenAPIOptions{
+		OperationID: "envelopeItem",
+		Errors:      []any{envelopeNotFound()},
+	})
+
+	req := httptest.NewRequest("POST", "/envelope/alice", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, 404, resp.StatusCode, "the status must come from HTTPStatus(), not default to 500")
+	raw, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(raw), "not found")
+
+	// The spec and the wire must agree on the same instance.
+	spec := oapi.GenerateOpenAPISpec()
+	post := spec["paths"].(map[string]any)["/envelope/{name}"].(map[string]any)["post"].(map[string]any)
+	_, documented := post["responses"].(map[string]any)["404"]
+	assert.True(t, documented, "spec should document the same status the handler serves")
+}
+
+// A type carrying both wins through the method, at runtime as well as in the spec.
+type overrideError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *overrideError) HTTPStatus() int { return 451 }
+
+func TestCustomErrors_HandlerReturnPrefersMethodOverCodeField(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+
+	Post(oapi, "/override/:name", func(c fiber.Ctx, input customErrInput) (customErrOutput, *overrideError) {
+		return customErrOutput{}, &overrideError{Code: 999, Message: "censored"}
+	}, OpenAPIOptions{OperationID: "overrideItem"})
+
+	req := httptest.NewRequest("POST", "/override/alice", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := app.Test(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, 451, resp.StatusCode, "HTTPStatus() should win over the Code field")
+}
