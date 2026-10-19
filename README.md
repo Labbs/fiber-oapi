@@ -24,7 +24,24 @@ A Go library that extends Fiber to add automatic OpenAPI documentation generatio
 go get github.com/labbs/fiber-oapi/v3
 ```
 
-> **Upgrading from v1.x?** v3 tracks Fiber v3 and requires Go 1.26+. Breaking changes:
+> **What's new in v3.3**
+> - [`AuthError.Err`](#authenticationauthorization-errors): the cause of an authentication failure (`errors.Is` / `errors.As`), and its status through `HTTPStatus()`.
+> - [`TokenValidatorFunc` and `ContextTokenValidator`](#token-only-services-tokenvalidatorfunc): an auth service that only validates tokens.
+> - [Problem details (RFC 9457)](#problem-details-rfc-9457): `Problem`, `ContentTyper`, `ProblemDetails`, `ValidationStatusCode`, `ProblemCodes`.
+> - [Raw request bodies](#raw-request-body-binary): `body:"raw"` and `RequestContentType`.
+> - [Responses written by the handler](#responses-written-by-the-handler-binary-streams-sse): `Responder`, `RawResponse`, `ResponseContentType`, Server-Sent Events.
+> - [Success status](#success-status-201-204-and-extra-responses): `SuccessStatus` (201, 204 without body) and `Responses`.
+> - [Route middlewares](#route-middlewares): `OpenAPIOptions.Middlewares`.
+> - Protected routes document their 401, and 403 when they check roles, scopes or resources.
+>
+> Everything above is opt-in, except **three changes of behavior**:
+> 1. **[Authentication runs first.](#authentication-runs-first)** A protected route checks the credentials before reading its input: a request that fails authentication gets its 401 without its body being decoded, even if that body is malformed or invalid (it used to get a 400 or 422).
+> 2. **Path, query and header values now win over the body.** The body used to be decoded after the path and query, and the JSON decoder matches keys case-insensitively: a field tagged `uri:"id"` without `json:"-"` could be overwritten by `{"id": "..."}` in the body. The body is now decoded first.
+> 3. **`uri` fields no longer appear in the documented request body.** They were already documented as path parameters.
+>
+> Also: `SmartAuthMiddleware` and `MultiSchemeAuthMiddleware` now go through `Config.AuthErrorHandler` when one is set.
+
+> **Upgrading from v1.x?** v3 tracks Fiber v3 and requires Go 1.27+. Breaking changes:
 > - Handlers now take `fiber.Ctx` (struct value) instead of `*fiber.Ctx`.
 > - The path-parameter struct tag is now `uri:` instead of `path:` (Fiber v3 binder convention). Query and header tags are unchanged.
 > - The default validation/parse error response uses a new `ErrorEnvelope` shape (one entry per failing field, `response_context.response_id` mirrored from `X-Request-Id`) and validation errors are returned as **422 Unprocessable Entity** instead of 400. See [Error responses](#error-responses).
@@ -77,6 +94,13 @@ type Config struct {
     DefaultSecurity        []map[string][]string     // Default security requirements
     ValidationErrorHandler ValidationErrorHandler    // Custom handler for validation errors
     AuthErrorHandler       AuthErrorHandler          // Custom handler for auth errors (401/403/5xx)
+    NotFoundHandler        fiber.Handler             // Custom handler for unmatched routes (see UseNotFoundHandler)
+    DefaultErrorShape      any                       // One shape for library errors (see below)
+    IncludeInvalidValueInErrors bool                 // Echo the offending value in error entries (default: false)
+
+    ProblemDetails         bool                      // Library errors as RFC 9457 problems (default: false)
+    ValidationStatusCode   int                       // Status of validation errors (default: 422)
+    ProblemCodes           map[string]string         // Replace the Code of a problem, per category
 }
 ```
 
@@ -126,11 +150,90 @@ type MyInput struct {
 }
 ```
 
+The body is decoded first, then the path, query and header values are bound:
+they always win over a body key with the same name.
+
 Special tags:
+- `body:"raw"` — Receive the request body as-is in a `[]byte` field (see [Raw request body](#raw-request-body-binary))
 - `openapi:"-"` — Exclude a field from the OpenAPI schema (the field still works in the handler)
 - `description:"text"` — Add a description to the field in the spec
 - `resource:"document"` — Mark field as a resource identifier for dynamic authorization
 - `action:"write"` — Specify the action for resource access checks
+
+### Raw request body (binary)
+
+Fiber's body binder only knows structured formats (JSON, XML, forms...). To
+receive a body as-is — a file, an encrypted package — tag a `[]byte` field with
+`body:"raw"`:
+
+```go
+type PutBlobInput struct {
+    ID          string `uri:"id" validate:"required,uuid"`
+    IfNoneMatch string `header:"If-None-Match" validate:"required,eq=*"`
+    Body        []byte `body:"raw" validate:"required,max=10485760"` // the body, as-is
+}
+
+fiberoapi.Put(v1, "/blobs/:id", ctrl.PutBlob, fiberoapi.OpenAPIOptions{
+    RequestContentType: "application/octet-stream", // default for a raw body
+})
+```
+
+- The body is copied (Fiber reuses its buffers), whatever its `Content-Type`.
+- An empty body leaves the field `nil`, so `required` rejects it; `min` / `max`
+  apply to its length.
+- A struct can have only one `body:"raw"` field, and it must be a `[]byte`:
+  anything else panics when the route is registered.
+- The spec documents the body as `{type: string, format: binary}` under
+  `RequestContentType`. `uri`, `query` and `header` fields stay parameters.
+  For a JSON input, `RequestContentType` sets the media type of the JSON body.
+
+The whole body is read before the handler runs: `fiber.Config.BodyLimit`
+(4 MiB by default) must be at least the largest body you accept. A route
+middleware can enforce a lower limit on one route.
+
+## Success status (201, 204) and extra responses
+
+```go
+fiberoapi.Post(v1, "/users", ctrl.CreateUser, fiberoapi.OpenAPIOptions{
+    SuccessStatus: 201,
+})
+
+fiberoapi.Post(v1, "/auth/logout", ctrl.Logout, fiberoapi.OpenAPIOptions{
+    SuccessStatus: 204, // sent without a body, documented without content
+})
+
+fiberoapi.Put(v1, "/blobs/:id", ctrl.PutBlob, fiberoapi.OpenAPIOptions{
+    SuccessStatus: 201,
+    Responses: map[string]any{ // OpenAPI response objects, merged as-is
+        "200": map[string]any{"description": "Same content already present"},
+    },
+})
+```
+
+At runtime, the status of a successful response is, in order:
+
+1. a status other than 200 set by the handler with `c.Status(...)`;
+2. the `HTTPStatus() int` of the output, when it implements it — e.g. 201 for
+   a new resource, 200 for an existing one;
+3. `SuccessStatus`;
+4. 200.
+
+The spec documents the success response under `SuccessStatus`. `Responses`
+is merged last and replaces any generated response with the same key.
+
+## Route middlewares
+
+`OpenAPIOptions.Middlewares` runs handlers on one route only, before its input
+is read — after the group middlewares and, on a protected route, after
+[authentication](#authentication-runs-first). A middleware can answer on its
+own to stop the chain:
+
+```go
+fiberoapi.Post(v1, "/auth/login", ctrl.Login, fiberoapi.OpenAPIOptions{
+    Security:    "disabled",
+    Middlewares: []fiber.Handler{limiter.New(limiter.Config{Max: 5})}, // 429
+})
+```
 
 ## Groups
 
@@ -162,6 +265,106 @@ type Input struct {
     Tags   []string `json:"tags" validate:"dive,min=1"`
 }
 ```
+
+## Responses written by the handler (binary, streams, SSE)
+
+A handler normally returns a value that the library encodes as JSON. When the
+output implements `Responder`, the library calls its `Respond` method instead,
+and the output writes its own status, headers and body. The success status of
+the route (see [Success status](#success-status-201-204-and-extra-responses))
+is set before `Respond` runs, and `Respond` may override it.
+
+```go
+type Responder interface {
+    Respond(c fiber.Ctx) error
+}
+```
+
+`RawResponse` covers the common case of a binary body:
+
+```go
+fiberoapi.Get(v1, "/blobs/:id",
+    func(c fiber.Ctx, in GetBlobInput) (*fiberoapi.RawResponse, error) {
+        data, err := store.Get(in.ID)
+        if err != nil {
+            return nil, err
+        }
+        return &fiberoapi.RawResponse{
+            ContentType: "application/octet-stream", // default
+            Body:        data,
+            // Status: 0 keeps the success status of the route (200 by default)
+        }, nil
+    },
+    fiberoapi.OpenAPIOptions{ResponseContentType: "application/octet-stream"},
+)
+```
+
+In the spec, the success response of a `Responder` route is documented under
+`ResponseContentType` (`application/octet-stream` by default) with
+`{type: string, format: binary}`, or `{type: string}` for a `text/...` media
+type. For a regular JSON output, `ResponseContentType` sets the media type the
+JSON is sent and documented with (e.g. `application/vnd.api+json`).
+
+### Server-Sent Events
+
+A Server-Sent Events stream is a `Responder` written by the application:
+
+```go
+// EventStream sends the events of one subscription until the client goes
+// away or the server ends the subscription.
+type EventStream struct {
+    events <-chan Event
+    cancel func()
+}
+
+func (s *EventStream) Respond(c fiber.Ctx) error {
+    c.Set("Content-Type", "text/event-stream")
+    c.Set("Cache-Control", "no-cache")
+    c.Set("X-Accel-Buffering", "no") // disable proxy buffering (nginx)
+
+    // The writer runs after the handler has returned: do not use c inside it.
+    return c.SendStreamWriter(func(w *bufio.Writer) {
+        defer s.cancel()
+        ping := time.NewTicker(15 * time.Second)
+        defer ping.Stop()
+        for {
+            select {
+            case event, ok := <-s.events:
+                if !ok {
+                    return // the server closes the stream
+                }
+                fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, event.Type, event.Data)
+            case <-ping.C:
+                fmt.Fprint(w, ": ping\n\n") // keeps idle connections open
+            }
+            if err := w.Flush(); err != nil {
+                return // the client is gone
+            }
+        }
+    })
+}
+
+fiberoapi.Get(v1, "/sync/events",
+    func(c fiber.Ctx, _ struct{}) (*EventStream, error) {
+        events, cancel := broker.Subscribe()
+        return &EventStream{events: events, cancel: cancel}, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary:             "Change feed",
+        ResponseContentType: "text/event-stream",
+    },
+)
+```
+
+Two settings live outside the library and must be handled by the application:
+
+- **Compression.** The `compress` middleware buffers the response, so events
+  would never reach the client. Exclude the stream from it:
+  `compress.New(compress.Config{Next: func(c fiber.Ctx) bool { return c.Path() == "/v1/sync/events" }})`.
+- **`WriteTimeout`.** `fiber.Config.WriteTimeout` bounds the whole response,
+  stream included. Leave it at 0 or above the longest stream you serve, or end
+  streams on the server side periodically and let clients reconnect
+  (`EventSource` does so automatically, sending `Last-Event-ID`).
 
 ## Error responses
 
@@ -199,7 +402,7 @@ Status codes used by the default handler:
 
 | Code | Category | Entry `type` |
 |------|----------|--------------|
-| 422 | Failed validation rules | `validation_error` |
+| 422 | Failed validation rules (`Config.ValidationStatusCode` to change it) | `validation_error` |
 | 400 | JSON parse / type mismatch | `type_error`, `parse_error` |
 | 401 / 403 | Authentication / authorization | `authentication_error`, `authorization_error` |
 
@@ -214,7 +417,8 @@ if you want each entry to carry a `value` field.
 
 The OpenAPI spec exposes `ErrorEnvelope` / `ValidationErrorEntry` / `ResponseContext`
 under `components.schemas` and adds a 422 response with a realistic example to
-every operation, plus a 400 example for body-carrying methods. Routes that
+every operation, plus a 400 example for body-carrying methods, a 401 for
+protected routes, and a 403 for those that check roles, scopes or resources. Routes that
 declare a non-empty `TError` and no per-status `OpenAPIOptions.Errors` keep their
 domain shape under the catch-all `4XX` response — as soon as the route declares
 explicit `Errors` entries the catch-all is suppressed and only the enumerated
@@ -269,6 +473,64 @@ If you need a different shape, set `Config.ValidationErrorHandler` / `Config.Aut
 stays friendly, but `var ute *json.UnmarshalTypeError; errors.As(err, &ute)` still recovers
 the original).
 
+### Problem details (RFC 9457)
+
+Set `Config.ProblemDetails` and every error produced by the library — parsing,
+validation, authentication, 404/405, serialization — is a `Problem`, sent as
+`application/problem+json` and documented as such in the spec:
+
+```go
+oapi := fiberoapi.New(app, fiberoapi.Config{
+    EnableValidation:     true,
+    ProblemDetails:       true,
+    ValidationStatusCode: 400, // default 422, at runtime and in the spec
+    ProblemCodes: map[string]string{ // default: the category itself
+        "validation_error": "invalid_request",
+        "parse_error":      "invalid_request",
+        "type_error":       "invalid_request",
+    },
+})
+```
+
+```json
+{
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "field 'name' must be at least 3",
+  "code": "invalid_request",
+  "errors": [
+    {"type": "validation_error", "code": 400, "loc": ["body", "name"], "field": "name",
+     "msg": "field 'name' must be at least 3", "constraint": "min=3"}
+  ]
+}
+```
+
+`code` and `errors` are extension members: a stable identifier, and the
+per-field entries of validation and type errors. The categories are
+`validation_error`, `parse_error`, `type_error`, `authentication_error`,
+`authorization_error`, `not_found`, `method_not_allowed`,
+`serialization_error` and `internal_error`.
+
+`ProblemDetails` takes precedence over `DefaultErrorShape`.
+`ValidationErrorHandler`, `AuthErrorHandler` and `NotFoundHandler` keep
+priority; they can answer with a problem of their own:
+
+```go
+AuthErrorHandler: func(c fiber.Ctx, err *fiberoapi.AuthError) error {
+    p := &fiberoapi.Problem{Title: "Unauthorized", Status: err.StatusCode, Code: "token_expired"}
+    return c.Status(p.Status).JSON(p, p.ContentType())
+},
+```
+
+Any error value — a `TError`, an entry of `OpenAPIOptions.Errors` — can choose
+its `Content-Type` by implementing `ContentTyper`; `Problem` answers
+`application/problem+json`. A handler can therefore return a `*Problem` as its
+`TError`:
+
+```go
+type ContentTyper interface{ ContentType() string }
+```
+
 ### Unifying all errors under one shape (`DefaultErrorShape`)
 
 By default, the library emits its own `ErrorEnvelope` shape for framework-level
@@ -311,6 +573,8 @@ per-route override still wins.
 
 Result: in your spec every error response references `#/components/schemas/ErrorResponse`
 **except 422**, which stays on `#/components/schemas/ErrorEnvelope`.
+
+`DefaultErrorShape` is ignored when `ProblemDetails` is set.
 
 Per-route entries declared via `OpenAPIOptions.Errors` still take precedence
 for their status code — so you can selectively override the default shape on a
@@ -508,6 +772,57 @@ config := fiberoapi.Config{
 oapi := fiberoapi.New(app, config)
 ```
 
+### Token-only services (`TokenValidatorFunc`)
+
+An application that only validates tokens does not need to implement the whole
+`AuthorizationService`:
+
+```go
+oapi := fiberoapi.New(app, fiberoapi.Config{
+    EnableAuthorization: true,
+    AuthService: fiberoapi.TokenValidatorFunc(func(token string) (*fiberoapi.AuthContext, error) {
+        return tokens.Validate(token) // tokens.ErrExpired, tokens.ErrDeviceRevoked...
+    }),
+})
+```
+
+`HasRole` and `HasScope` read the roles and scopes of the returned
+`AuthContext`. Resource permissions are not supported: a route that needs them
+answers 500 (`ErrResourceAuthorizationNotConfigured`), never an access granted
+by default.
+
+A service that needs the request to validate a Bearer token (client IP,
+request context...) can implement `ContextTokenValidator`; it is then used
+instead of `ValidateToken`:
+
+```go
+type ContextTokenValidator interface {
+    ValidateTokenCtx(c fiber.Ctx, token string) (*fiberoapi.AuthContext, error)
+}
+```
+
+### Authentication runs first
+
+On a protected route, the credentials are checked before anything reads the
+request, in a handler placed at the head of the route:
+
+1. authentication (401 on failure);
+2. the [route middlewares](#route-middlewares);
+3. reading the input (path, query, body, headers) and validating it (400, 422);
+4. roles and resource permissions (403);
+5. the handler.
+
+Group middlewares (`Group(prefix, handlers...)`, `Use`) run before step 1.
+
+- A request without valid credentials gets its 401 before its body is
+  decoded: no work is spent on a request that will be rejected, and an
+  unauthenticated client cannot probe the validation rules of the route.
+- [Route middlewares](#route-middlewares) run after authentication and can call
+  `GetAuthContext(c)`.
+- Roles and resource permissions are still checked after the input is parsed,
+  since they need it.
+- Routes with `Security: "disabled"` are not authenticated.
+
 ### Public vs Protected Routes
 
 ```go
@@ -641,18 +956,32 @@ oapi := fiberoapi.New(app, fiberoapi.Config{
 })
 ```
 
-Without custom handlers, default error responses are returned:
+`AuthError` keeps the error returned by the validator (`ValidateToken`,
+`ValidateAPIKey`...) as its cause, so the handler can tell failures apart
+without comparing messages:
 
-```json
-// 401 - Authentication failure
-{"code": 401, "details": "invalid token", "type": "authentication_error"}
-
-// 403 - Authorization failure
-{"code": 403, "details": "requires one of: admin, editor", "type": "authorization_error"}
-
-// 400 - Validation failure
-{"code": 400, "details": "...", "type": "validation_error"}
+```go
+AuthErrorHandler: func(c fiber.Ctx, err *fiberoapi.AuthError) error {
+    code := "unauthorized"
+    switch {
+    case errors.Is(err, tokens.ErrExpired):
+        code = "token_expired"
+    case errors.Is(err, tokens.ErrDeviceRevoked):
+        code = "device_revoked"
+    }
+    return c.Status(err.StatusCode).JSON(fiber.Map{"code": code})
+},
 ```
+
+The status is 401 (403 for a missing scope), unless the cause implements
+`HTTPStatus() int`, in which case its status is used.
+
+`SmartAuthMiddleware` and `MultiSchemeAuthMiddleware` go through
+`AuthErrorHandler` too, and answer with a problem when `ProblemDetails` is set.
+
+Without custom handlers, authentication and authorization failures use the
+default [error envelope](#error-responses), with an entry of type
+`authentication_error` (401) or `authorization_error` (403).
 
 ## Conditional Auth Middleware
 

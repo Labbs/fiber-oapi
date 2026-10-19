@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strings"
@@ -23,6 +24,9 @@ type inputShape struct {
 	// isStruct is true when the request input is a (possibly pointer-to) struct,
 	// i.e. eligible for URI/Query/Header binding.
 	isStruct bool
+	// rawBody is the index of the []byte field tagged body:"raw", which
+	// receives the request body as-is, or -1.
+	rawBody int
 }
 
 var shapeCache sync.Map // map[reflect.Type]*inputShape
@@ -34,8 +38,10 @@ func shapeFor[TInput any]() *inputShape {
 	if cached, ok := shapeCache.Load(t); ok {
 		return cached.(*inputShape)
 	}
+	rawBody, _ := rawBodyField(t) // an invalid declaration panics in Method
 	s := &inputShape{
 		isStruct: t != nil && dereferenceType(t).Kind() == reflect.Struct,
+		rawBody:  rawBody,
 	}
 	actual, _ := shapeCache.LoadOrStore(t, s)
 	return actual.(*inputShape)
@@ -49,21 +55,20 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 
 	shape := shapeFor[TInput]()
 
-	if shape.isStruct {
-		if err := c.Bind().URI(&input); err != nil {
-			return input, err
-		}
-		if err := c.Bind().Query(&input); err != nil {
-			return input, err
-		}
-	}
-
 	// Parse body for POST/PUT/PATCH methods only if there's content.
-	// Body is parsed before headers so that header values take priority over any
-	// field that the JSON decoder may have populated (e.g. when a header-bound
-	// field is also sent in the body without a json:"-" tag).
+	// The body is parsed first so that path, query and header values take
+	// priority over any field the JSON decoder may have populated. The decoder
+	// matches keys case-insensitively, so a field tagged uri:"id" without
+	// json:"-" would otherwise be overwritten by {"id": "..."} in the body.
 	method := c.Method()
-	if method == "POST" || method == "PUT" || method == "PATCH" {
+	if (method == "POST" || method == "PUT" || method == "PATCH") && shape.rawBody >= 0 {
+		// The body is taken as-is, whatever its Content-Type. Fiber reuses its
+		// buffers, so it is copied. An empty body leaves the field nil, so that
+		// validate:"required" rejects it.
+		if body := c.Body(); len(body) > 0 {
+			setRawBody(&input, shape.rawBody, bytes.Clone(body))
+		}
+	} else if method == "POST" || method == "PUT" || method == "PATCH" {
 		bodyLength := len(c.Body())
 		contentType := c.Get("Content-Type")
 
@@ -84,6 +89,12 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	}
 
 	if shape.isStruct {
+		if err := c.Bind().URI(&input); err != nil {
+			return input, err
+		}
+		if err := c.Bind().Query(&input); err != nil {
+			return input, err
+		}
 		if err := c.Bind().Header(&input); err != nil {
 			return input, err
 		}
@@ -97,21 +108,67 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	}
 
 	// Validate authorization if enabled in configuration and not disabled for this route
-	if app.Config().EnableAuthorization && options != nil {
-		if securityValue, ok := options.Security.(string); ok && securityValue == "disabled" {
-			// Skip authorization for this route
-		} else {
-			cfg := app.Config()
-			if routeSecurity, ok := options.Security.([]map[string][]string); ok && len(routeSecurity) > 0 {
-				cfg.DefaultSecurity = routeSecurity
-			}
-			if err := validateAuthorization(c, input, cfg.AuthService, &cfg, options.RequiredRoles, options.RequireAllRoles); err != nil {
-				return input, err
-			}
+	if app.config.EnableAuthorization && options != nil && !securityDisabled(options) {
+		// The request was authenticated before being read (see
+		// authenticateHandler); only roles and resource permissions, which
+		// need the input, are left.
+		authCtx, _ := c.Locals("auth").(*AuthContext)
+		if err := authorize(c, authCtx, input, app.config.AuthService, options.RequiredRoles, options.RequireAllRoles); err != nil {
+			return input, err
 		}
 	}
 
 	return input, nil
+}
+
+// securityDisabled reports whether the route opted out of authentication
+// with Security: "disabled".
+func securityDisabled(options *OpenAPIOptions) bool {
+	securityValue, ok := options.Security.(string)
+	return ok && securityValue == "disabled"
+}
+
+// rawBodyField returns the index of the field tagged body:"raw" in the input
+// struct t, or -1 when there is none. The field must be a []byte, and there
+// can be only one.
+func rawBodyField(t reflect.Type) (int, error) {
+	if t == nil {
+		return -1, nil
+	}
+	t = dereferenceType(t)
+	if t.Kind() != reflect.Struct {
+		return -1, nil
+	}
+	index := -1
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Tag.Get("body") != "raw" {
+			continue
+		}
+		if !field.IsExported() || field.Type != bytesType {
+			return -1, fmt.Errorf("field %s has body:\"raw\" but is not an exported []byte", field.Name)
+		}
+		if index >= 0 {
+			return -1, fmt.Errorf("fields %s and %s both have body:\"raw\"", t.Field(index).Name, field.Name)
+		}
+		index = i
+	}
+	return index, nil
+}
+
+var bytesType = reflect.TypeFor[[]byte]()
+
+// setRawBody stores body in the raw body field of input, allocating the
+// struct when the input is a nil pointer.
+func setRawBody[TInput any](input *TInput, field int, body []byte) {
+	v := reflect.ValueOf(input).Elem()
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
+	v.Field(field).SetBytes(body)
 }
 
 // handleCustomError emits the error instance a handler returned through its
@@ -124,17 +181,29 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 // reflection cannot reach (nested in a slice of per-field errors, say) and
 // exposes it through the interface was documented under its real status and then
 // served as 500. Runtime and spec must not disagree about the same instance.
-func handleCustomError(c fiber.Ctx, customErr interface{}) error {
+//
+// The Content-Type is application/json, unless the instance implements
+// ContentTyper.
+func handleCustomError(c fiber.Ctx, cfg *Config, customErr interface{}) error {
 	// A typed nil pointer carries nothing to serialize, so it cannot say anything
 	// about its own status either.
 	if v := reflect.ValueOf(customErr); v.Kind() == reflect.Ptr && v.IsNil() {
+		if cfg.ProblemDetails {
+			return writeProblem(c, cfg.problemFor(errorCategory{Code: 500, Type: errTypeInternal, Message: "Internal server error"}, nil))
+		}
 		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
 	}
 
 	statusCode := extractErrorStatusCode(customErr)
 
 	// Return the error as JSON
-	if err := c.Status(statusCode).JSON(customErr); err != nil {
+	if err := c.Status(statusCode).JSON(customErr, contentTypeOf(customErr)); err != nil {
+		if cfg.ProblemDetails {
+			if fallbackErr := writeProblem(c, cfg.problemFor(errorCategory{Code: 500, Type: errTypeSerialization, Message: "Failed to serialize error response"}, nil)); fallbackErr != nil {
+				return err
+			}
+			return nil
+		}
 		if fallbackErr := c.Status(500).JSON(fiber.Map{"error": "Failed to serialize error response"}); fallbackErr != nil {
 			// Both serializations failed, return original error to Fiber
 			return err

@@ -123,13 +123,51 @@ func buildErrorResponse(errInst any) (statusCode int, response map[string]interf
 	response = map[string]interface{}{
 		"description": description,
 		"content": map[string]interface{}{
-			"application/json": map[string]interface{}{
+			contentTypeOf(errInst): map[string]interface{}{
 				"schema":  errorSchemaRef(t),
 				"example": errInst,
 			},
 		},
 	}
 	return statusCode, response
+}
+
+// addErrorResponse documents resp under the status key. When a response is
+// already documented there (validation errors moved to 400 by
+// Config.ValidationStatusCode, next to parse errors), the two are combined:
+// descriptions are joined and differing schemas become a oneOf.
+func addErrorResponse(responses map[string]interface{}, key string, resp map[string]interface{}) {
+	existing, ok := responses[key].(map[string]interface{})
+	if !ok {
+		responses[key] = resp
+		return
+	}
+	content := map[string]interface{}{}
+	if prev, ok := existing["content"].(map[string]interface{}); ok {
+		for mediaType, media := range prev {
+			content[mediaType] = media
+		}
+	}
+	if next, ok := resp["content"].(map[string]interface{}); ok {
+		for mediaType, media := range next {
+			prev, ok := content[mediaType].(map[string]interface{})
+			if !ok {
+				content[mediaType] = media
+				continue
+			}
+			nextSchema := media.(map[string]interface{})["schema"]
+			if reflect.DeepEqual(prev["schema"], nextSchema) {
+				continue // same shape: keep the first example
+			}
+			content[mediaType] = map[string]interface{}{
+				"schema": map[string]interface{}{"oneOf": []interface{}{prev["schema"], nextSchema}},
+			}
+		}
+	}
+	responses[key] = map[string]interface{}{
+		"description": fmt.Sprintf("%v; %v", existing["description"], resp["description"]),
+		"content":     content,
+	}
 }
 
 // statusCodeKey formats a status code as the string key expected by the
@@ -173,8 +211,10 @@ func isValidationError(err error) bool {
 
 // categorizeError extracts the (code, type, message, details) tuple from any
 // internal error produced by parseInput. Used by the default error handler to
-// build either an ErrorEnvelope or a user-supplied DefaultErrorShape instance.
-func categorizeError(err error) errorCategory {
+// build a Problem or a user-supplied DefaultErrorShape instance.
+// validationStatus is the status of validation errors (see
+// Config.ValidationStatusCode).
+func categorizeError(err error, validationStatus int) errorCategory {
 	if authErr, ok := errors.AsType[*AuthError](err); ok {
 		t := errTypeAuthN
 		if authErr.StatusCode == fiber.StatusForbidden {
@@ -213,7 +253,7 @@ func categorizeError(err error) errorCategory {
 			head = fmt.Sprintf("%s (and %d more)", msgs[0], len(msgs)-1)
 		}
 		return errorCategory{
-			Code:    statusValidationError,
+			Code:    validationStatus,
 			Type:    errTypeValidation,
 			Message: head,
 			Details: strings.Join(msgs, "; "),

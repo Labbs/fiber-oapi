@@ -2,6 +2,7 @@ package fiberoapi
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -67,7 +68,7 @@ func validateBearerToken(c fiber.Ctx, authService AuthorizationService) (*AuthCo
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	return authService.ValidateToken(token)
+	return validateToken(c, authService, token)
 }
 
 // validateBasicAuth validates Basic Auth credentials from the Authorization header.
@@ -221,10 +222,41 @@ func validateWithScheme(c fiber.Ctx, scheme SecurityScheme, authService Authoriz
 type AuthError struct {
 	StatusCode int
 	Message    string
+	// Err is the underlying cause, typically the error returned by
+	// ValidateToken (or another scheme validator). It is reachable through
+	// errors.Is / errors.As, so an AuthErrorHandler can tell an expired token
+	// from a revoked one without comparing messages.
+	Err error
 }
 
 func (e *AuthError) Error() string {
 	return e.Message
+}
+
+// Unwrap returns the underlying cause.
+func (e *AuthError) Unwrap() error {
+	return e.Err
+}
+
+// authErrorFrom converts an error returned while authenticating into an
+// AuthError, keeping the original as its cause. A typed AuthError is returned
+// as-is. The status defaults to 401, or 403 for a ScopeError; a cause that
+// implements HTTPStatusError overrides both.
+func authErrorFrom(err error) *AuthError {
+	if authErr, ok := errors.AsType[*AuthError](err); ok {
+		return authErr
+	}
+	status := fiber.StatusUnauthorized
+	if _, ok := errors.AsType[*ScopeError](err); ok {
+		status = fiber.StatusForbidden
+	}
+	var withStatus HTTPStatusError
+	if errors.As(err, &withStatus) {
+		if s := withStatus.HTTPStatus(); s > 0 {
+			status = s
+		}
+	}
+	return &AuthError{StatusCode: status, Message: err.Error(), Err: err}
 }
 
 // ScopeError represents an authorization failure due to missing scopes (403, not 401).

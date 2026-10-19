@@ -93,6 +93,24 @@ type Config struct {
 	DefaultErrorShape any
 
 	IncludeInvalidValueInErrors bool // Include offending value in default error envelope (default: false — may leak secrets)
+
+	// ProblemDetails makes every error produced by the library (parsing,
+	// validation, authentication, 404/405, serialization) a Problem (RFC
+	// 9457), sent and documented as application/problem+json. It takes
+	// precedence over DefaultErrorShape. ValidationErrorHandler,
+	// AuthErrorHandler and NotFoundHandler keep priority when set.
+	ProblemDetails bool
+
+	// ValidationStatusCode is the status of validation errors, at runtime and
+	// in the spec. Default: 422.
+	ValidationStatusCode int
+
+	// ProblemCodes replaces the default Code of a Problem, per error category:
+	// "validation_error", "parse_error", "type_error", "authentication_error",
+	// "authorization_error", "not_found", "method_not_allowed",
+	// "serialization_error", "internal_error". The default Code is the
+	// category itself.
+	ProblemCodes map[string]string
 }
 
 // OpenAPIOptions represents options for OpenAPI operations
@@ -134,6 +152,35 @@ type OpenAPIOptions struct {
 	// generic parameter (which can be `error`, a concrete `*ErrorResponse`,
 	// or any other type) and the library emits it with the matching status.
 	Errors []any `json:"-"`
+
+	// Middlewares run before the request input is read, after the group
+	// middlewares and, on a protected route, after authentication.
+	// A middleware can answer on its own (429, 413...) to stop the chain.
+	Middlewares []fiber.Handler `json:"-"`
+
+	// SuccessStatus is the status of a successful response, at runtime and in
+	// the spec (e.g. 201, 204). Default: 200. A 204 is sent without a body.
+	// At runtime a status other than 200 set by the handler wins, then the
+	// HTTPStatus() of the output (see HTTPStatusError), then SuccessStatus.
+	SuccessStatus int `json:"-"`
+
+	// Responses adds OpenAPI response objects as-is, keyed by status code
+	// ("200", "default", ...). They are merged last and replace a generated
+	// response with the same key — e.g. to document a "200" next to a
+	// SuccessStatus of 201.
+	Responses map[string]any `json:"-"`
+
+	// RequestContentType is the media type the request body is documented
+	// with. Default: application/octet-stream for an input with a body:"raw"
+	// field, application/json otherwise.
+	RequestContentType string `json:"-"`
+
+	// ResponseContentType is the media type of the success response. For an
+	// output that implements Responder, it is documented with a binary schema
+	// (a string one for text/...), e.g. "application/octet-stream" (the
+	// default) or "text/event-stream". For a JSON output, the JSON is sent and
+	// documented under it (default application/json).
+	ResponseContentType string `json:"-"`
 }
 
 // OpenAPIOperation represents a registered operation
@@ -144,6 +191,8 @@ type OpenAPIOperation struct {
 	InputType  reflect.Type
 	OutputType reflect.Type
 	ErrorType  reflect.Type
+
+	responder bool // the output implements Responder
 }
 
 type OpenAPIParameter struct {

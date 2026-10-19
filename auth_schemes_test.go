@@ -634,7 +634,7 @@ func TestMultiScheme_AllSchemesFail(t *testing.T) {
 
 func TestBackwardCompat_ExistingMockAuthService(t *testing.T) {
 	// Existing MockAuthService (which does NOT implement any new interfaces)
-	// should continue to work with Bearer token via validateAuthorization
+	// should continue to work with Bearer token via authenticate
 	app := fiber.New()
 	authService := NewMockAuthService()
 

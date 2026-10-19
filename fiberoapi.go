@@ -54,7 +54,10 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.ValidationErrorHandler != nil ||
 			provided.AuthErrorHandler != nil ||
 			provided.NotFoundHandler != nil ||
-			provided.DefaultErrorShape != nil
+			provided.DefaultErrorShape != nil ||
+			provided.ProblemDetails ||
+			provided.ValidationStatusCode != 0 ||
+			provided.ProblemCodes != nil
 
 		// Only override boolean defaults if the config appears to be explicitly set
 		if hasExplicitConfig {
@@ -83,7 +86,10 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.ValidationErrorHandler != nil ||
 			provided.AuthErrorHandler != nil ||
 			provided.NotFoundHandler != nil ||
-			provided.DefaultErrorShape != nil)
+			provided.DefaultErrorShape != nil ||
+			provided.ProblemDetails ||
+			provided.ValidationStatusCode != 0 ||
+			provided.ProblemCodes != nil)
 
 		// Only restore defaults if ALL boolean fields are false (suggesting they weren't explicitly set)
 		allBooleansAreFalse := !provided.EnableValidation && !provided.EnableOpenAPIDocs && !provided.EnableAuthorization
@@ -140,6 +146,15 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		if provided.IncludeInvalidValueInErrors {
 			cfg.IncludeInvalidValueInErrors = true
+		}
+		if provided.ProblemDetails {
+			cfg.ProblemDetails = true
+		}
+		if provided.ValidationStatusCode != 0 {
+			cfg.ValidationStatusCode = provided.ValidationStatusCode
+		}
+		if provided.ProblemCodes != nil {
+			cfg.ProblemCodes = provided.ProblemCodes
 		}
 	}
 
@@ -236,7 +251,8 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		if op.InputType != nil {
 			collectAllTypes(op.InputType, allTypes)
 		}
-		if op.OutputType != nil {
+		// A Responder writes its own body: its fields are not a schema.
+		if op.OutputType != nil && !op.responder {
 			collectAllTypes(op.OutputType, allTypes)
 		}
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
@@ -275,6 +291,9 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	}
 	if _, ok := schemas["ResponseContext"]; !ok {
 		schemas["ResponseContext"] = generateSchema(reflect.TypeOf(ResponseContext{}))
+	}
+	if o.config.ProblemDetails {
+		schemas["Problem"] = generateSchema(reflect.TypeOf(Problem{}))
 	}
 
 	for _, op := range o.operations {
@@ -357,7 +376,22 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 		// Add request body schema for POST/PUT methods
 		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
-			if op.InputType != nil {
+			if rawBody, _ := rawBodyField(op.InputType); rawBody >= 0 {
+				// The body is received as-is: documented as binary, under
+				// RequestContentType (application/octet-stream by default).
+				mediaType := op.Options.RequestContentType
+				if mediaType == "" {
+					mediaType = fiber.MIMEOctetStream
+				}
+				enhancedOptions["requestBody"] = map[string]interface{}{
+					"required": true,
+					"content": map[string]interface{}{
+						mediaType: map[string]interface{}{
+							"schema": map[string]interface{}{"type": "string", "format": "binary"},
+						},
+					},
+				}
+			} else if op.InputType != nil {
 				inputType := dereferenceType(op.InputType)
 
 				var schemaRef map[string]interface{}
@@ -371,10 +405,14 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 					}
 				}
 
+				mediaType := op.Options.RequestContentType
+				if mediaType == "" {
+					mediaType = fiber.MIMEApplicationJSON
+				}
 				enhancedOptions["requestBody"] = map[string]interface{}{
 					"required": true,
 					"content": map[string]interface{}{
-						"application/json": map[string]interface{}{
+						mediaType: map[string]interface{}{
 							"schema": schemaRef,
 						},
 					},
@@ -385,8 +423,29 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// Add response schemas
 		responses := make(map[string]interface{})
 
-		// Success response (200)
-		if op.OutputType != nil {
+		// Success response (200 unless SuccessStatus says otherwise)
+		successKey := statusCodeKey(fiber.StatusOK)
+		successDescription := "Successful response"
+		if op.Options.SuccessStatus > 0 && op.Options.SuccessStatus != fiber.StatusOK {
+			successKey = statusCodeKey(op.Options.SuccessStatus)
+			if text := http.StatusText(op.Options.SuccessStatus); text != "" {
+				successDescription = text
+			}
+		}
+		if op.Options.SuccessStatus == fiber.StatusNoContent {
+			responses[successKey] = map[string]interface{}{"description": successDescription}
+		} else if op.responder {
+			mediaType := op.Options.ResponseContentType
+			if mediaType == "" {
+				mediaType = fiber.MIMEOctetStream
+			}
+			responses[successKey] = map[string]interface{}{
+				"description": successDescription,
+				"content": map[string]interface{}{
+					mediaType: map[string]interface{}{"schema": responderSchema(mediaType)},
+				},
+			}
+		} else if op.OutputType != nil {
 			outputType := dereferenceType(op.OutputType)
 
 			var schemaRef map[string]interface{}
@@ -400,14 +459,20 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 				}
 			}
 
-			responses["200"] = map[string]interface{}{
-				"description": "Successful response",
+			mediaType := op.Options.ResponseContentType
+			if mediaType == "" {
+				mediaType = fiber.MIMEApplicationJSON
+			}
+			responses[successKey] = map[string]interface{}{
+				"description": successDescription,
 				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
+					mediaType: map[string]interface{}{
 						"schema": schemaRef,
 					},
 				},
 			}
+		} else if op.Options.SuccessStatus > 0 {
+			responses[successKey] = map[string]interface{}{"description": successDescription}
 		}
 
 		// A route can opt out of every framework-emitted error response (the 4XX
@@ -446,75 +511,103 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			responses["4XX"] = map[string]interface{}{
 				"description": "Domain error returned by the handler",
 				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
+					contentTypeOfType(op.ErrorType): map[string]interface{}{
 						"schema": schemaRef,
 					},
 				},
 			}
 		}
 
-		// Default error responses produced by parseInput. When the user opted
-		// into a unified shape via Config.DefaultErrorShape, every default entry
-		// uses that shape (schema + a representative example built via the same
-		// reflection helpers used at runtime). Otherwise we fall back to the
-		// built-in ErrorEnvelope.
+		// Default error responses produced by the library. With
+		// Config.ProblemDetails they are Problems (application/problem+json).
+		// When the user opted into a unified shape via Config.DefaultErrorShape,
+		// every default entry but the validation one uses that shape (schema + a
+		// representative example built via the same reflection helpers used at
+		// runtime). Otherwise we fall back to the built-in ErrorEnvelope.
 		shape := o.config.DefaultErrorShape
-		defaultErrContent := func(cat errorCategory, envExample func() ErrorEnvelope) map[string]interface{} {
-			if shape != nil {
-				return map[string]interface{}{
+		defaultErrResponse := func(description string, cat errorCategory, envExample func() ErrorEnvelope) map[string]interface{} {
+			mediaType := fiber.MIMEApplicationJSON
+			var content map[string]interface{}
+			switch {
+			case o.config.ProblemDetails:
+				var entries []ValidationErrorEntry
+				if cat.Type == errTypeValidation || cat.Type == errTypeTypeMismatch {
+					entries = envExample().Errors
+				}
+				mediaType = MIMEApplicationProblemJSON
+				content = map[string]interface{}{
+					"schema":  map[string]interface{}{"$ref": "#/components/schemas/Problem"},
+					"example": o.config.problemFor(cat, entries),
+				}
+			// Validation errors always use ErrorEnvelope so per-field info (loc /
+			// constraint / field / value) stays first-class for clients building
+			// form-level UX, even when DefaultErrorShape is set for the other
+			// error categories.
+			case shape != nil && cat.Type != errTypeValidation:
+				content = map[string]interface{}{
 					"schema":  errorSchemaRef(reflect.TypeOf(shape)),
 					"example": materializeError(shape, cat),
 				}
+			default:
+				content = map[string]interface{}{
+					"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
+					"example": envExample(),
+				}
 			}
 			return map[string]interface{}{
-				"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
-				"example": envExample(),
+				"description": description,
+				"content":     map[string]interface{}{mediaType: content},
 			}
 		}
 
-		// All three default envelope responses (422 validation, 400 parse,
-		// 404 not-found) honour the opt-out so a /health-style endpoint can
+		// All default responses (validation, 400 parse, 401/403 auth, 404
+		// not-found) honour the opt-out so a /health-style endpoint can
 		// document just its 200.
 		if !suppressAllDefaultErrors {
-			// 422 always uses ErrorEnvelope so per-field info (loc / constraint /
-			// field / value) stays first-class for clients building form-level UX,
-			// even when DefaultErrorShape is set for the other error categories.
-			responses["422"] = map[string]interface{}{
-				"description": "Validation error",
-				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
-						"schema":  map[string]interface{}{"$ref": "#/components/schemas/ErrorEnvelope"},
-						"example": exampleValidationEnvelope(),
-					},
-				},
-			}
+			validationStatus := o.config.validationStatus()
+			addErrorResponse(responses, statusCodeKey(validationStatus), defaultErrResponse("Validation error", errorCategory{
+				Code:    validationStatus,
+				Type:    errTypeValidation,
+				Message: translateValidatorTag("workspaceId", "min", "11"),
+			}, func() ErrorEnvelope { return exampleValidationEnvelope(validationStatus) }))
 			// Only POST/PUT/PATCH can produce JSON parse / type-mismatch errors.
 			// The 400 covers both syntactically-malformed bodies and well-formed
 			// bodies whose fields have the wrong JSON type — the example uses the
 			// type-mismatch form because it's the most common in practice and the
 			// most useful to show clients.
 			if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
-				responses["400"] = map[string]interface{}{
-					"description": "Invalid request body (malformed JSON or wrong field type)",
-					"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
-						Code:    400,
-						Type:    errTypeTypeMismatch,
-						Message: fmt.Sprintf(typeMismatchMsgFmt, "age", "int", "string"),
-						Details: "int",
-					}, exampleParseEnvelope)},
+				addErrorResponse(responses, "400", defaultErrResponse("Invalid request body (malformed JSON or wrong field type)", errorCategory{
+					Code:    400,
+					Type:    errTypeTypeMismatch,
+					Message: fmt.Sprintf(typeMismatchMsgFmt, "age", "int", "string"),
+					Details: "int",
+				}, exampleParseEnvelope))
+			}
+			// A protected route answers 401 when the credentials are missing or
+			// invalid, and 403 when it checks roles, scopes or resource
+			// permissions.
+			if o.isProtected(op) {
+				addErrorResponse(responses, "401", defaultErrResponse("Authentication required or failed", errorCategory{
+					Code:    fiber.StatusUnauthorized,
+					Type:    errTypeAuthN,
+					Message: exampleAuthNMessage,
+				}, func() ErrorEnvelope { return exampleAuthEnvelope(fiber.StatusUnauthorized) }))
+				if o.checksPermissions(op) {
+					addErrorResponse(responses, "403", defaultErrResponse("Insufficient permissions", errorCategory{
+						Code:    fiber.StatusForbidden,
+						Type:    errTypeAuthZ,
+						Message: exampleAuthZMessage,
+					}, func() ErrorEnvelope { return exampleAuthEnvelope(fiber.StatusForbidden) }))
 				}
 			}
 			// When UseNotFoundHandler() has been installed, every operation can
 			// surface the same shape under 404 — document it.
 			if o.notFoundInstalled {
-				responses["404"] = map[string]interface{}{
-					"description": "Route not found",
-					"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
-						Code:    404,
-						Type:    errTypeNotFound,
-						Message: "no route matches GET /users/42",
-					}, exampleNotFoundEnvelope)},
-				}
+				addErrorResponse(responses, "404", defaultErrResponse("Route not found", errorCategory{
+					Code:    404,
+					Type:    errTypeNotFound,
+					Message: "no route matches GET /users/42",
+				}, exampleNotFoundEnvelope))
 			}
 		}
 		// Per-route custom errors declared via OpenAPIOptions.Errors. Each instance
@@ -529,11 +622,64 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			responses[statusCodeKey(code)] = response
 		}
 
+		// Extra response objects declared on the route are merged last, as-is.
+		for key, response := range op.Options.Responses {
+			responses[key] = response
+		}
+
 		enhancedOptions["responses"] = responses
 		pathItem[strings.ToLower(op.Method)] = enhancedOptions
 	}
 
 	return spec
+}
+
+// isProtected reports whether the route authenticates its requests, and can
+// therefore answer 401.
+func (o *OApiApp) isProtected(op OpenAPIOperation) bool {
+	return o.config.EnableAuthorization && o.config.AuthService != nil && !securityDisabled(&op.Options)
+}
+
+// checksPermissions reports whether a protected route can answer 403: it
+// requires roles, scopes, or permissions on a resource of its input.
+func (o *OApiApp) checksPermissions(op OpenAPIOperation) bool {
+	if len(op.Options.RequiredRoles) > 0 || hasResourceField(op.InputType) {
+		return true
+	}
+	if len(o.config.SecuritySchemes) == 0 {
+		return false // Bearer-only validation ignores scopes
+	}
+	requirements, _ := op.Options.Security.([]map[string][]string)
+	if len(requirements) == 0 {
+		requirements = o.config.DefaultSecurity
+	}
+	for _, requirement := range requirements {
+		for _, scopes := range requirement {
+			if len(scopes) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasResourceField reports whether the input struct declares a resource
+// permission check (a string field with a resource tag).
+func hasResourceField(t reflect.Type) bool {
+	if t == nil {
+		return false
+	}
+	t = dereferenceType(t)
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Tag.Get("resource") != "" && field.Type.Kind() == reflect.String {
+			return true
+		}
+	}
+	return false
 }
 
 // GenerateOpenAPISpecYAML generates the OpenAPI spec in YAML format
@@ -827,7 +973,12 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 			}
 
 			// Skip fields that are path, query, or header parameters - they are handled separately
-			if field.Tag.Get("path") != "" || field.Tag.Get("query") != "" || field.Tag.Get("header") != "" {
+			if field.Tag.Get("path") != "" || field.Tag.Get("uri") != "" || field.Tag.Get("query") != "" || field.Tag.Get("header") != "" {
+				continue
+			}
+
+			// Skip the raw body field - the request body is documented as binary
+			if field.Tag.Get("body") == "raw" {
 				continue
 			}
 
@@ -1080,11 +1231,16 @@ func Method[TInput any, TOutput any, TError any](
 	if err := validatePathParams[TInput](fullPath); err != nil {
 		panic(fmt.Sprintf("Path validation failed for %s: %v", fullPath, err))
 	}
+	if _, err := rawBodyField(reflect.TypeFor[TInput]()); err != nil {
+		panic(fmt.Sprintf("Raw body validation failed for %s: %v", fullPath, err))
+	}
 
 	// Register the operation for OpenAPI documentation with type information
 	var inputZero TInput
 	var outputZero TOutput
 	var errorZero TError
+
+	outputIsResponder := reflect.TypeFor[TOutput]().Implements(responderType)
 
 	app.operations = append(app.operations, OpenAPIOperation{
 		Method:     m,
@@ -1093,6 +1249,7 @@ func Method[TInput any, TOutput any, TError any](
 		InputType:  reflect.TypeOf(inputZero),
 		OutputType: reflect.TypeOf(outputZero),
 		ErrorType:  reflect.TypeOf(errorZero),
+		responder:  outputIsResponder,
 	})
 
 	inputType := reflect.TypeOf(inputZero)
@@ -1101,42 +1258,52 @@ func Method[TInput any, TOutput any, TError any](
 	fiberHandler := func(c fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
-			// Custom handlers, when configured, still take precedence and receive
-			// the raw error — they may produce any shape they want.
-			if authErr, ok := errors.AsType[*AuthError](err); ok && app.config.AuthErrorHandler != nil {
-				return app.config.AuthErrorHandler(c, authErr)
-			}
-			if app.config.ValidationErrorHandler != nil {
-				return app.config.ValidationErrorHandler(c, err)
-			}
-			// If the user opted into a unified shape, emit it for parse / auth /
-			// generic errors. Validation errors keep the rich ErrorEnvelope shape
-			// regardless — collapsing a multi-field validation failure into a
-			// single flat struct would lose the per-field info (loc / constraint
-			// / field) that clients rely on for form-level UX.
-			if app.config.DefaultErrorShape != nil && !isValidationError(err) {
-				cat := categorizeError(err)
-				return c.Status(cat.Code).JSON(materializeError(app.config.DefaultErrorShape, cat))
-			}
-			// Default response: structured envelope, one entry per failing field,
-			// status code chosen per error category (422 validation, 400 parse,
-			// 401/403 auth).
-			envelope, status := buildEnvelope(c, app.config, inputType, err)
-			return c.Status(status).JSON(envelope)
+			return app.respondError(c, inputType, err)
 		}
 
 		output, customErr := handler(c, input)
 
 		if !isZero(customErr) {
-			return handleCustomError(c, customErr)
+			return handleCustomError(c, &app.config, customErr)
 		}
 
-		if err := c.JSON(output); err != nil {
-			if fallbackErr := c.Status(500).JSON(ErrorResponse{
-				Code:    500,
-				Details: "Failed to serialize response",
-				Type:    "serialization_error",
-			}); fallbackErr != nil {
+		status := successStatus(c, output, options.SuccessStatus)
+
+		// An output that writes its own response (binary, stream, SSE).
+		if outputIsResponder {
+			if responder, ok := any(output).(Responder); ok && responder != nil && !isNilPointer(responder) {
+				c.Status(status)
+				return responder.Respond(c)
+			}
+		}
+
+		if status == fiber.StatusNoContent || status == fiber.StatusNotModified {
+			return c.SendStatus(status)
+		}
+		c.Status(status)
+
+		var jsonErr error
+		if options.ResponseContentType != "" {
+			jsonErr = c.JSON(output, options.ResponseContentType)
+		} else {
+			jsonErr = c.JSON(output)
+		}
+		if err := jsonErr; err != nil {
+			var fallbackErr error
+			if app.config.ProblemDetails {
+				fallbackErr = writeProblem(c, app.config.problemFor(errorCategory{
+					Code:    500,
+					Type:    errTypeSerialization,
+					Message: "Failed to serialize response",
+				}, nil))
+			} else {
+				fallbackErr = c.Status(500).JSON(ErrorResponse{
+					Code:    500,
+					Details: "Failed to serialize response",
+					Type:    errTypeSerialization,
+				})
+			}
+			if fallbackErr != nil {
 				// Both serializations failed, return original error to Fiber
 				return err
 			}
@@ -1145,7 +1312,113 @@ func Method[TInput any, TOutput any, TError any](
 		return nil
 	}
 
-	app.f.Add([]string{m}, fullPath, fiberHandler)
+	// Route chain: [authenticateHandler] + options.Middlewares + fiberHandler.
+	// On a protected route, credentials are checked before anything reads the
+	// request: a request that fails authentication never has its body decoded,
+	// and the route middlewares can call GetAuthContext.
+	chain := make([]any, 0, len(options.Middlewares)+2)
+	if app.config.EnableAuthorization && app.config.AuthService != nil && !securityDisabled(&options) {
+		routeSecurity, _ := options.Security.([]map[string][]string)
+		chain = append(chain, app.authenticateHandler(inputType, routeSecurity))
+	}
+	for _, mw := range options.Middlewares {
+		if mw != nil {
+			chain = append(chain, mw)
+		}
+	}
+	chain = append(chain, fiberHandler)
+
+	app.f.Add([]string{m}, fullPath, chain[0], chain[1:]...)
+}
+
+// successStatus resolves the status of a successful response: a status other
+// than 200 set by the handler, then the HTTPStatus() of the output, then the
+// route's SuccessStatus, then 200.
+func successStatus(c fiber.Ctx, output any, configured int) int {
+	if current := c.Response().StatusCode(); current != fiber.StatusOK {
+		return current
+	}
+	if withStatus, ok := output.(HTTPStatusError); ok && !isNilPointer(output) {
+		if status := withStatus.HTTPStatus(); status > 0 {
+			return status
+		}
+	}
+	if configured > 0 {
+		return configured
+	}
+	return fiber.StatusOK
+}
+
+// isNilPointer reports whether v is a typed nil pointer.
+func isNilPointer(v any) bool {
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Ptr && rv.IsNil()
+}
+
+// authenticateHandler builds the handler placed at the head of every protected
+// route: it authenticates the request, stores the AuthContext in
+// c.Locals("auth") and moves on to the next handler.
+func (app *OApiApp) authenticateHandler(inputType reflect.Type, routeSecurity []map[string][]string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		authCtx, err := authenticate(c, &app.config, routeSecurity)
+		if err != nil {
+			return app.respondError(c, inputType, err)
+		}
+		if authCtx != nil {
+			c.Locals("auth", authCtx)
+		}
+		return c.Next()
+	}
+}
+
+// respondError writes the response for an error raised before the handler
+// runs (authentication, parsing, validation, authorization).
+func (app *OApiApp) respondError(c fiber.Ctx, inputType reflect.Type, err error) error {
+	// Custom handlers, when configured, still take precedence and receive
+	// the raw error — they may produce any shape they want.
+	if authErr, ok := errors.AsType[*AuthError](err); ok && app.config.AuthErrorHandler != nil {
+		return app.config.AuthErrorHandler(c, authErr)
+	}
+	if app.config.ValidationErrorHandler != nil {
+		return app.config.ValidationErrorHandler(c, err)
+	}
+	if app.config.ProblemDetails {
+		return writeProblem(c, app.problemForError(c, inputType, err))
+	}
+	// If the user opted into a unified shape, emit it for parse / auth /
+	// generic errors. Validation errors keep the rich ErrorEnvelope shape
+	// regardless — collapsing a multi-field validation failure into a
+	// single flat struct would lose the per-field info (loc / constraint
+	// / field) that clients rely on for form-level UX.
+	if app.config.DefaultErrorShape != nil && !isValidationError(err) {
+		cat := categorizeError(err, app.config.validationStatus())
+		return c.Status(cat.Code).JSON(materializeError(app.config.DefaultErrorShape, cat))
+	}
+	// Default response: structured envelope, one entry per failing field,
+	// status code chosen per error category (422 validation, 400 parse,
+	// 401/403 auth).
+	envelope, status := buildEnvelope(c, app.config, inputType, err)
+	return c.Status(status).JSON(envelope)
+}
+
+// problemForError builds the Problem for an error raised before the handler
+// runs. Validation and type errors carry their per-field entries.
+func (app *OApiApp) problemForError(c fiber.Ctx, inputType reflect.Type, err error) *Problem {
+	cat := categorizeError(err, app.config.validationStatus())
+	var entries []ValidationErrorEntry
+	if cat.Type == errTypeValidation || cat.Type == errTypeTypeMismatch {
+		envelope, _ := buildEnvelope(c, app.config, inputType, err)
+		entries = envelope.Errors
+	}
+	// The detail repeats the first entry, which names the field as the
+	// client sent it (JSON / URI / header name) rather than its Go name.
+	if cat.Type == errTypeValidation && len(entries) > 0 {
+		cat.Message = entries[0].Msg
+		if len(entries) > 1 {
+			cat.Message = fmt.Sprintf("%s (and %d more)", entries[0].Msg, len(entries)-1)
+		}
+	}
+	return app.config.problemFor(cat, entries)
 }
 
 // Get defines a GET operation for the OpenAPI documentation
