@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -57,13 +58,17 @@ func classifyingAuthErrorHandler(c fiber.Ctx, err *AuthError) error {
 	return c.Status(err.StatusCode).JSON(fiber.Map{"code": code})
 }
 
-func doBearer(t *testing.T, app *fiber.App, path, token string) (int, map[string]any) {
-	t.Helper()
-	req := httptest.NewRequest("GET", path, nil)
+func newBearerRequest(method, path, token string) *http.Request {
+	req := httptest.NewRequest(method, path, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	resp, err := app.Test(req)
+	return req
+}
+
+func doBearer(t *testing.T, app *fiber.App, path, token string) (int, map[string]any) {
+	t.Helper()
+	resp, err := app.Test(newBearerRequest("GET", path, token))
 	require.NoError(t, err)
 	raw, _ := io.ReadAll(resp.Body)
 	var body map[string]any

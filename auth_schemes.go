@@ -68,7 +68,7 @@ func validateBearerToken(c fiber.Ctx, authService AuthorizationService) (*AuthCo
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	return authService.ValidateToken(token)
+	return validateToken(c, authService, token)
 }
 
 // validateBasicAuth validates Basic Auth credentials from the Authorization header.

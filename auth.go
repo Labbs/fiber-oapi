@@ -109,7 +109,7 @@ func bearerTokenMiddleware(validator AuthorizationService, config *Config) fiber
 		}
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		authCtx, err := validator.ValidateToken(token)
+		authCtx, err := validateToken(c, validator, token)
 		if err != nil {
 			return authFailure(c, config, authErrorFrom(err), 401, fiber.Map{
 				"error":   "Invalid token",
