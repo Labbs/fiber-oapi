@@ -1,6 +1,6 @@
 module github.com/labbs/fiber-oapi/v3
 
-go 1.26.0
+go 1.27.2
 
 require (
 	github.com/go-playground/validator/v10 v10.30.5
