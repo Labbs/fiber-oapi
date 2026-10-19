@@ -132,17 +132,29 @@ func securityDisabled(options *OpenAPIOptions) bool {
 // reflection cannot reach (nested in a slice of per-field errors, say) and
 // exposes it through the interface was documented under its real status and then
 // served as 500. Runtime and spec must not disagree about the same instance.
-func handleCustomError(c fiber.Ctx, customErr interface{}) error {
+//
+// The Content-Type is application/json, unless the instance implements
+// ContentTyper.
+func handleCustomError(c fiber.Ctx, cfg *Config, customErr interface{}) error {
 	// A typed nil pointer carries nothing to serialize, so it cannot say anything
 	// about its own status either.
 	if v := reflect.ValueOf(customErr); v.Kind() == reflect.Ptr && v.IsNil() {
+		if cfg.ProblemDetails {
+			return writeProblem(c, cfg.problemFor(errorCategory{Code: 500, Type: errTypeInternal, Message: "Internal server error"}, nil))
+		}
 		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
 	}
 
 	statusCode := extractErrorStatusCode(customErr)
 
 	// Return the error as JSON
-	if err := c.Status(statusCode).JSON(customErr); err != nil {
+	if err := c.Status(statusCode).JSON(customErr, contentTypeOf(customErr)); err != nil {
+		if cfg.ProblemDetails {
+			if fallbackErr := writeProblem(c, cfg.problemFor(errorCategory{Code: 500, Type: errTypeSerialization, Message: "Failed to serialize error response"}, nil)); fallbackErr != nil {
+				return err
+			}
+			return nil
+		}
 		if fallbackErr := c.Status(500).JSON(fiber.Map{"error": "Failed to serialize error response"}); fallbackErr != nil {
 			// Both serializations failed, return original error to Fiber
 			return err

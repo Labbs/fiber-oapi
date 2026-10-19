@@ -99,12 +99,16 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 	}
 }
 
-// authFailure lets a middleware built from a Config honour its
-// AuthErrorHandler: when one is set it receives the AuthError, otherwise the
-// legacy body is written with the legacy status.
+// authFailure lets a middleware built from a Config honour its error
+// handling: the AuthErrorHandler receives the AuthError when one is set; with
+// ProblemDetails a Problem is written; otherwise the legacy body is written
+// with the legacy status.
 func authFailure(c fiber.Ctx, config *Config, authErr *AuthError, status int, body fiber.Map) error {
 	if config != nil && config.AuthErrorHandler != nil {
 		return config.AuthErrorHandler(c, authErr)
+	}
+	if config != nil && config.ProblemDetails {
+		return writeProblem(c, config.problemFor(categorizeError(authErr, config.validationStatus()), nil))
 	}
 	return c.Status(status).JSON(body)
 }

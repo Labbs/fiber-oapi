@@ -103,6 +103,24 @@ type Config struct {
 	// EnableAuthorization. Default: false (authentication runs after
 	// validation, as in v3.2).
 	AuthenticateFirst bool
+
+	// ProblemDetails makes every error produced by the library (parsing,
+	// validation, authentication, 404/405, serialization) a Problem (RFC
+	// 9457), sent and documented as application/problem+json. It takes
+	// precedence over DefaultErrorShape. ValidationErrorHandler,
+	// AuthErrorHandler and NotFoundHandler keep priority when set.
+	ProblemDetails bool
+
+	// ValidationStatusCode is the status of validation errors, at runtime and
+	// in the spec. Default: 422.
+	ValidationStatusCode int
+
+	// ProblemCodes replaces the default Code of a Problem, per error category:
+	// "validation_error", "parse_error", "type_error", "authentication_error",
+	// "authorization_error", "not_found", "method_not_allowed",
+	// "serialization_error", "internal_error". The default Code is the
+	// category itself.
+	ProblemCodes map[string]string
 }
 
 // OpenAPIOptions represents options for OpenAPI operations

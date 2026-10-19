@@ -3,6 +3,7 @@ package fiberoapi
 import (
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -159,4 +160,52 @@ func TestAlign_DefaultErrorShape_404_TypeMatchesRuntime(t *testing.T) {
 	assert.Equal(t, errTypeNotFound, advertised.Type)
 	assert.Equal(t, advertised.Type, runtime.Type, "404 Type must match between spec example and runtime")
 	assert.Equal(t, advertised.Code, runtime.Code)
+}
+
+// TestAlign_ProblemDetails_RuntimeMatchesSpecExample checks, for each
+// category a route documents, that the runtime Problem has the status, the
+// Content-Type and the code the spec advertises.
+func TestAlign_ProblemDetails_RuntimeMatchesSpecExample(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableValidation:    true,
+		EnableAuthorization: true,
+		AuthService:         NewMockAuthService(),
+		ProblemDetails:      true,
+	})
+	Post(oapi, "/users/:name", func(c fiber.Ctx, _ alignInput) (alignOutput, struct{}) {
+		return alignOutput{Message: "ok"}, struct{}{}
+	}, WithRoles(OpenAPIOptions{OperationID: "createUser"}, "admin"))
+	oapi.UseNotFoundHandler()
+
+	responses := oapi.GenerateOpenAPISpec()["paths"].(map[string]any)["/users/{name}"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
+	advertised := func(code string) *Problem {
+		content := responses[code].(map[string]any)["content"].(map[string]any)
+		return content[MIMEApplicationProblemJSON].(map[string]any)["example"].(*Problem)
+	}
+
+	withToken := func(req *http.Request, token string) *http.Request {
+		req.Header.Set("Authorization", "Bearer "+token)
+		return req
+	}
+	cases := map[string]*http.Request{
+		"400": withToken(jsonRequest("POST", "/users/alice", `{"age":"not a number"}`), "admin-token"),
+		"401": jsonRequest("POST", "/users/alice", `{}`),
+		"403": withToken(jsonRequest("POST", "/users/alice", `{}`), "valid-token"),
+		"404": httptest.NewRequest("GET", "/missing", nil),
+		"422": withToken(jsonRequest("POST", "/users/a", `{}`), "admin-token"),
+	}
+	for code, req := range cases {
+		status, runtime := readProblem(t, app, req)
+		spec := advertised(code)
+		assert.Equal(t, code, statusCodeKey(status), code)
+		assert.Equal(t, spec.Status, runtime.Status, code)
+		assert.Equal(t, spec.Code, runtime.Code, code)
+		assert.Equal(t, spec.Title, runtime.Title, code)
+		assert.Equal(t, len(spec.Errors) > 0, len(runtime.Errors) > 0, "%s: per-field entries", code)
+	}
+	assert.Equal(t, advertised("400").Detail, func() string {
+		_, p := readProblem(t, app, withToken(jsonRequest("POST", "/users/alice", `{"age":"not a number"}`), "admin-token"))
+		return p.Detail
+	}(), "the type-mismatch message format is the same in the spec and at runtime")
 }

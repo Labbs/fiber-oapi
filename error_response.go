@@ -312,7 +312,7 @@ func buildEnvelope(c fiber.Ctx, cfg Config, inputType reflect.Type, err error) (
 			}
 			entry := ValidationErrorEntry{
 				Type:       errTypeValidation,
-				Code:       statusValidationError,
+				Code:       cfg.validationStatus(),
 				Loc:        loc,
 				Field:      leaf,
 				Msg:        translateValidatorTag(leaf, fe.Tag(), fe.Param()),
@@ -323,7 +323,7 @@ func buildEnvelope(c fiber.Ctx, cfg Config, inputType reflect.Type, err error) (
 			}
 			entries = append(entries, entry)
 		}
-		return ErrorEnvelope{Errors: entries, ResponseContext: ctx}, statusValidationError
+		return ErrorEnvelope{Errors: entries, ResponseContext: ctx}, cfg.validationStatus()
 	}
 
 	// Anything else — generic parse error.
@@ -345,14 +345,15 @@ func constraintString(tag, param string) string {
 	return tag + "=" + param
 }
 
-// exampleEnvelope returns a representative ErrorEnvelope used as the OpenAPI
-// example for the 422 response. It is deliberately compact but realistic enough
-// to show the shape to consumers reading the spec.
-func exampleValidationEnvelope() ErrorEnvelope {
+// exampleValidationEnvelope returns a representative ErrorEnvelope used as the
+// OpenAPI example for the validation response (422 by default). It is
+// deliberately compact but realistic enough to show the shape to consumers
+// reading the spec.
+func exampleValidationEnvelope(status int) ErrorEnvelope {
 	return ErrorEnvelope{
 		Errors: []ValidationErrorEntry{{
 			Type: errTypeValidation,
-			Code: statusValidationError,
+			Code: status,
 			Loc:  []any{"body", "workspaceId"},
 			// Routing through translateValidatorTag (the same function the
 			// runtime calls) keeps the spec example wording perfectly aligned
@@ -393,7 +394,7 @@ func methodNotAllowedEnvelope(c fiber.Ctx, allowed []string) ErrorEnvelope {
 	path := sanitizePath(c.Path())
 	return ErrorEnvelope{
 		Errors: []ValidationErrorEntry{{
-			Type:       "method_not_allowed",
+			Type:       errTypeMethodNotAllowed,
 			Code:       fiber.StatusMethodNotAllowed,
 			Loc:        []any{"method"},
 			Field:      method,
@@ -423,23 +424,29 @@ func (o *OApiApp) defaultNotFoundHandler() fiber.Handler {
 		// 405: the path exists on another method.
 		if allowed := o.allowedMethodsFor(c.Path()); len(allowed) > 0 {
 			c.Set(fiber.HeaderAllow, strings.Join(allowed, ", "))
+			cat := errorCategory{
+				Code:    fiber.StatusMethodNotAllowed,
+				Type:    errTypeMethodNotAllowed,
+				Message: fmt.Sprintf("method %s not allowed on %s", c.Method(), sanitizePath(c.Path())),
+				Details: strings.Join(allowed, ", "),
+			}
+			if o.config.ProblemDetails {
+				return writeProblem(c, o.config.problemFor(cat, nil))
+			}
 			if shape != nil {
-				cat := errorCategory{
-					Code:    fiber.StatusMethodNotAllowed,
-					Type:    "method_not_allowed",
-					Message: fmt.Sprintf("method %s not allowed on %s", c.Method(), sanitizePath(c.Path())),
-					Details: strings.Join(allowed, ", "),
-				}
 				return c.Status(fiber.StatusMethodNotAllowed).JSON(materializeError(shape, cat))
 			}
 			return c.Status(fiber.StatusMethodNotAllowed).JSON(methodNotAllowedEnvelope(c, allowed))
 		}
+		cat := errorCategory{
+			Code:    fiber.StatusNotFound,
+			Type:    errTypeNotFound,
+			Message: fmt.Sprintf("no route matches %s %s", c.Method(), sanitizePath(c.Path())),
+		}
+		if o.config.ProblemDetails {
+			return writeProblem(c, o.config.problemFor(cat, nil))
+		}
 		if shape != nil {
-			cat := errorCategory{
-				Code:    fiber.StatusNotFound,
-				Type:    errTypeNotFound,
-				Message: fmt.Sprintf("no route matches %s %s", c.Method(), sanitizePath(c.Path())),
-			}
 			return c.Status(fiber.StatusNotFound).JSON(materializeError(shape, cat))
 		}
 		return c.Status(fiber.StatusNotFound).JSON(NotFoundEnvelope(c))
