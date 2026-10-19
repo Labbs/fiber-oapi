@@ -167,6 +167,18 @@ type OpenAPIOptions struct {
 	// middlewares and, with Config.AuthenticateFirst, after authentication.
 	// A middleware can answer on its own (429, 413...) to stop the chain.
 	Middlewares []fiber.Handler `json:"-"`
+
+	// SuccessStatus is the status of a successful response, at runtime and in
+	// the spec (e.g. 201, 204). Default: 200. A 204 is sent without a body.
+	// At runtime a status other than 200 set by the handler wins, then the
+	// HTTPStatus() of the output (see HTTPStatusError), then SuccessStatus.
+	SuccessStatus int `json:"-"`
+
+	// Responses adds OpenAPI response objects as-is, keyed by status code
+	// ("200", "default", ...). They are merged last and replace a generated
+	// response with the same key — e.g. to document a "200" next to a
+	// SuccessStatus of 201.
+	Responses map[string]any `json:"-"`
 }
 
 // OpenAPIOperation represents a registered operation

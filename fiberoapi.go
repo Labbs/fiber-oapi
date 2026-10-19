@@ -406,8 +406,18 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// Add response schemas
 		responses := make(map[string]interface{})
 
-		// Success response (200)
-		if op.OutputType != nil {
+		// Success response (200 unless SuccessStatus says otherwise)
+		successKey := statusCodeKey(fiber.StatusOK)
+		successDescription := "Successful response"
+		if op.Options.SuccessStatus > 0 && op.Options.SuccessStatus != fiber.StatusOK {
+			successKey = statusCodeKey(op.Options.SuccessStatus)
+			if text := http.StatusText(op.Options.SuccessStatus); text != "" {
+				successDescription = text
+			}
+		}
+		if op.Options.SuccessStatus == fiber.StatusNoContent {
+			responses[successKey] = map[string]interface{}{"description": successDescription}
+		} else if op.OutputType != nil {
 			outputType := dereferenceType(op.OutputType)
 
 			var schemaRef map[string]interface{}
@@ -421,14 +431,16 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 				}
 			}
 
-			responses["200"] = map[string]interface{}{
-				"description": "Successful response",
+			responses[successKey] = map[string]interface{}{
+				"description": successDescription,
 				"content": map[string]interface{}{
 					"application/json": map[string]interface{}{
 						"schema": schemaRef,
 					},
 				},
 			}
+		} else if op.Options.SuccessStatus > 0 {
+			responses[successKey] = map[string]interface{}{"description": successDescription}
 		}
 
 		// A route can opt out of every framework-emitted error response (the 4XX
@@ -576,6 +588,11 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 			}
 			code, response := buildErrorResponse(errInst)
 			responses[statusCodeKey(code)] = response
+		}
+
+		// Extra response objects declared on the route are merged last, as-is.
+		for key, response := range op.Options.Responses {
+			responses[key] = response
 		}
 
 		enhancedOptions["responses"] = responses
@@ -1212,6 +1229,12 @@ func Method[TInput any, TOutput any, TError any](
 			return handleCustomError(c, &app.config, customErr)
 		}
 
+		status := successStatus(c, output, options.SuccessStatus)
+		if status == fiber.StatusNoContent || status == fiber.StatusNotModified {
+			return c.SendStatus(status)
+		}
+		c.Status(status)
+
 		if err := c.JSON(output); err != nil {
 			var fallbackErr error
 			if app.config.ProblemDetails {
@@ -1252,6 +1275,30 @@ func Method[TInput any, TOutput any, TError any](
 	chain = append(chain, fiberHandler)
 
 	app.f.Add([]string{m}, fullPath, chain[0], chain[1:]...)
+}
+
+// successStatus resolves the status of a successful response: a status other
+// than 200 set by the handler, then the HTTPStatus() of the output, then the
+// route's SuccessStatus, then 200.
+func successStatus(c fiber.Ctx, output any, configured int) int {
+	if current := c.Response().StatusCode(); current != fiber.StatusOK {
+		return current
+	}
+	if withStatus, ok := output.(HTTPStatusError); ok && !isNilPointer(output) {
+		if status := withStatus.HTTPStatus(); status > 0 {
+			return status
+		}
+	}
+	if configured > 0 {
+		return configured
+	}
+	return fiber.StatusOK
+}
+
+// isNilPointer reports whether v is a typed nil pointer.
+func isNilPointer(v any) bool {
+	rv := reflect.ValueOf(v)
+	return rv.Kind() == reflect.Ptr && rv.IsNil()
 }
 
 // authenticateHandler builds the handler placed at the head of a protected
