@@ -266,20 +266,17 @@ func TestHeaderNotInRequestBody(t *testing.T) {
 	_, hasName := properties["name"]
 	assert.True(t, hasName, "JSON body field should appear in request body schema")
 
-	// Verify that sending the header field in JSON body without the actual header
-	// does NOT satisfy the header requirement when using json:"-".
-	// Without json:"-", c.BodyParser can populate exported fields by Go name.
-	// Header parsing runs after body parsing, so real headers always take priority.
+	// Sending the header field in the JSON body without the actual header does
+	// NOT satisfy the header requirement: the JSON decoder fills RequestID by
+	// Go field name, but a header-only field (no json tag) is reset after the
+	// body is decoded, so validate:"required" fails.
 	bodyReq := httptest.NewRequest(http.MethodPost, "/items",
 		strings.NewReader(`{"RequestID":"from-body","name":"test"}`))
 	bodyReq.Header.Set("Content-Type", "application/json")
-	// No x-request-id header set — body sets RequestID via Go field name match
-	// but header parser doesn't overwrite (no header present), so body value persists.
-	// Use json:"-" on header fields to prevent body injection.
 
 	bodyResp, err := app.Test(bodyReq)
 	require.NoError(t, err)
-	assert.Equal(t, 200, bodyResp.StatusCode)
+	assert.Equal(t, 422, bodyResp.StatusCode)
 }
 
 func TestHeaderTakesPriorityOverBody(t *testing.T) {

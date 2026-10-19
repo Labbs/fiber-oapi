@@ -27,6 +27,9 @@ type inputShape struct {
 	// rawBody is the index of the []byte field tagged body:"raw", which
 	// receives the request body as-is, or -1.
 	rawBody int
+	// paramOnly lists the fields bound from the path, the query or the
+	// headers that declare no body tag (see paramOnlyFields).
+	paramOnly []int
 }
 
 var shapeCache sync.Map // map[reflect.Type]*inputShape
@@ -40,8 +43,9 @@ func shapeFor[TInput any]() *inputShape {
 	}
 	rawBody, _ := rawBodyField(t) // an invalid declaration panics in Method
 	s := &inputShape{
-		isStruct: t != nil && dereferenceType(t).Kind() == reflect.Struct,
-		rawBody:  rawBody,
+		isStruct:  t != nil && dereferenceType(t).Kind() == reflect.Struct,
+		rawBody:   rawBody,
+		paramOnly: paramOnlyFields(t),
 	}
 	actual, _ := shapeCache.LoadOrStore(t, s)
 	return actual.(*inputShape)
@@ -86,6 +90,11 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 				}
 			}
 		}
+		// The decoder may have filled a path, query or header field from a
+		// body key with the same name. Binding below only overwrites the
+		// parameters present in the request, so reset those fields first: a
+		// header absent from the request must not keep a value from the body.
+		resetFields(&input, shape.paramOnly)
 	}
 
 	if shape.isStruct {
@@ -157,6 +166,62 @@ func rawBodyField(t reflect.Type) (int, error) {
 }
 
 var bytesType = reflect.TypeFor[[]byte]()
+
+// bodyTags are the struct tags through which a body decoder fills a field.
+var bodyTags = []string{"json", "form", "xml", "msgpack", "cbor"}
+
+// paramOnlyFields returns the indexes of the fields of the input struct t
+// that are bound from the path, the query or the headers and declare no body
+// tag (a "-" tag counts as none). Body decoders still fill such a field when a
+// key matches its name, so parseInput resets them after decoding the body. A
+// field that declares both, e.g. query:"name" json:"name", accepts either.
+func paramOnlyFields(t reflect.Type) []int {
+	if t == nil {
+		return nil
+	}
+	t = dereferenceType(t)
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	var fields []int
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if !field.IsExported() {
+			continue
+		}
+		if field.Tag.Get("uri") == "" && field.Tag.Get("query") == "" && field.Tag.Get("header") == "" {
+			continue
+		}
+		fromBody := false
+		for _, tag := range bodyTags {
+			if name, _, _ := strings.Cut(field.Tag.Get(tag), ","); name != "" && name != "-" {
+				fromBody = true
+				break
+			}
+		}
+		if !fromBody {
+			fields = append(fields, i)
+		}
+	}
+	return fields
+}
+
+// resetFields sets the given fields of input to their zero value.
+func resetFields[TInput any](input *TInput, fields []int) {
+	if len(fields) == 0 {
+		return
+	}
+	v := reflect.ValueOf(input).Elem()
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	for _, i := range fields {
+		v.Field(i).SetZero()
+	}
+}
 
 // setRawBody stores body in the raw body field of input, allocating the
 // struct when the input is a nil pointer.
