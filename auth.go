@@ -146,36 +146,48 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 	}
 }
 
-// validateAuthorization validates permissions based on configured security schemes.
+// validateAuthorization authenticates the request, stores the AuthContext in
+// c.Locals("auth"), then checks roles and resource permissions. routeSecurity,
+// when non-empty, replaces Config.DefaultSecurity for this route.
+func validateAuthorization(c fiber.Ctx, input interface{}, config *Config, routeSecurity []map[string][]string, requiredRoles []string, requireAllRoles bool) error {
+	authCtx, err := authenticate(c, config, routeSecurity)
+	if err != nil {
+		return err
+	}
+	if authCtx != nil {
+		c.Locals("auth", authCtx)
+	}
+	return authorize(c, authCtx, input, config.AuthService, requiredRoles, requireAllRoles)
+}
+
+// authenticate validates the credentials of the request against the
+// configured security schemes and returns the resulting AuthContext. It does
+// not need the request input, so it can run before the body is read.
+// It returns (nil, nil) when no AuthService is configured.
 // When SecuritySchemes is empty, it falls back to Bearer-only validation for backward compatibility.
-func validateAuthorization(c fiber.Ctx, input interface{}, authService AuthorizationService, config *Config, requiredRoles []string, requireAllRoles bool) error {
+func authenticate(c fiber.Ctx, config *Config, routeSecurity []map[string][]string) (*AuthContext, error) {
+	authService := config.AuthService
 	if authService == nil {
-		if len(requiredRoles) > 0 {
-			return &AuthError{StatusCode: 500, Message: "authorization service not configured"}
-		}
-		return nil
+		return nil, nil
 	}
 
 	// Backward compatibility: if no SecuritySchemes are configured,
 	// fall back to Bearer-only validation (original behavior).
-	if config == nil || len(config.SecuritySchemes) == 0 {
+	if len(config.SecuritySchemes) == 0 {
 		authCtx, err := validateBearerToken(c, authService)
 		if err != nil {
 			// Preserve typed AuthError (including 5xx) and map ScopeError to 403,
 			// falling back to 401 only for untyped errors. The cause is kept.
-			return authErrorFrom(err)
+			return nil, authErrorFrom(err)
 		}
-		c.Locals("auth", authCtx)
-
-		// Check roles before resource access
-		if err := checkRequiredRoles(authCtx, authService, requiredRoles, requireAllRoles); err != nil {
-			return err
-		}
-		return validateResourceAccess(c, authCtx, input, authService)
+		return authCtx, nil
 	}
 
 	// Multi-scheme validation path
-	securityReqs := config.DefaultSecurity
+	securityReqs := routeSecurity
+	if len(securityReqs) == 0 {
+		securityReqs = config.DefaultSecurity
+	}
 	if len(securityReqs) == 0 {
 		securityReqs = buildDefaultFromSchemes(config.SecuritySchemes)
 	}
@@ -187,23 +199,41 @@ func validateAuthorization(c fiber.Ctx, input interface{}, authService Authoriza
 	for _, requirement := range securityReqs {
 		authCtx, err := validateSecurityRequirement(c, requirement, config.SecuritySchemes, authService)
 		if err == nil {
-			c.Locals("auth", authCtx)
-
-			// Check roles before resource access
-			if err := checkRequiredRoles(authCtx, authService, requiredRoles, requireAllRoles); err != nil {
-				return err
-			}
-			return validateResourceAccess(c, authCtx, input, authService)
+			return authCtx, nil
 		}
 		var authErr *AuthError
 		if errors.As(err, &authErr) && authErr.StatusCode >= 500 {
-			return err
+			return nil, err
 		}
 		lastErr = err
 	}
+	if lastErr == nil {
+		return nil, &AuthError{StatusCode: 500, Message: "no security requirements configured"}
+	}
 
 	// Propagate typed errors (AuthError, ScopeError) without re-wrapping
-	return authErrorFrom(lastErr)
+	return nil, authErrorFrom(lastErr)
+}
+
+// authorize checks the required roles of the route, then the resource
+// permissions declared on the input (resource / action tags). It needs the
+// parsed input, so it always runs after the request has been read.
+func authorize(c fiber.Ctx, authCtx *AuthContext, input interface{}, authService AuthorizationService, requiredRoles []string, requireAllRoles bool) error {
+	if authService == nil {
+		if len(requiredRoles) > 0 {
+			return &AuthError{StatusCode: 500, Message: "authorization service not configured"}
+		}
+		return nil
+	}
+	if authCtx == nil {
+		return &AuthError{StatusCode: 401, Message: "authentication required"}
+	}
+
+	// Check roles before resource access
+	if err := checkRequiredRoles(authCtx, authService, requiredRoles, requireAllRoles); err != nil {
+		return err
+	}
+	return validateResourceAccess(c, authCtx, input, authService)
 }
 
 // checkRequiredRoles checks the authenticated user's roles against the required roles.

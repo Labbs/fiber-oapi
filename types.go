@@ -93,6 +93,16 @@ type Config struct {
 	DefaultErrorShape any
 
 	IncludeInvalidValueInErrors bool // Include offending value in default error envelope (default: false — may leak secrets)
+
+	// AuthenticateFirst checks the credentials before anything reads the
+	// request, in a handler placed at the head of every protected route
+	// (before OpenAPIOptions.Middlewares). A request without a valid token is
+	// rejected without its body being decoded, and route middlewares can call
+	// GetAuthContext. Roles and resource permissions are still checked after
+	// the input is parsed, since they need it. Only has an effect with
+	// EnableAuthorization. Default: false (authentication runs after
+	// validation, as in v3.2).
+	AuthenticateFirst bool
 }
 
 // OpenAPIOptions represents options for OpenAPI operations
@@ -134,6 +144,11 @@ type OpenAPIOptions struct {
 	// generic parameter (which can be `error`, a concrete `*ErrorResponse`,
 	// or any other type) and the library emits it with the matching status.
 	Errors []any `json:"-"`
+
+	// Middlewares run before the request input is read, after the group
+	// middlewares and, with Config.AuthenticateFirst, after authentication.
+	// A middleware can answer on its own (429, 413...) to stop the chain.
+	Middlewares []fiber.Handler `json:"-"`
 }
 
 // OpenAPIOperation represents a registered operation

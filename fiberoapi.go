@@ -141,6 +141,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		if provided.IncludeInvalidValueInErrors {
 			cfg.IncludeInvalidValueInErrors = true
 		}
+		if provided.AuthenticateFirst {
+			cfg.AuthenticateFirst = true
+		}
 	}
 
 	oapi := &OApiApp{
@@ -504,6 +507,29 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 					}, exampleParseEnvelope)},
 				}
 			}
+			// A protected route answers 401 when the credentials are missing or
+			// invalid, and 403 when it checks roles, scopes or resource
+			// permissions.
+			if o.isProtected(op) {
+				responses["401"] = map[string]interface{}{
+					"description": "Authentication required or failed",
+					"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
+						Code:    fiber.StatusUnauthorized,
+						Type:    errTypeAuthN,
+						Message: exampleAuthNMessage,
+					}, func() ErrorEnvelope { return exampleAuthEnvelope(fiber.StatusUnauthorized) })},
+				}
+				if o.checksPermissions(op) {
+					responses["403"] = map[string]interface{}{
+						"description": "Insufficient permissions",
+						"content": map[string]interface{}{"application/json": defaultErrContent(errorCategory{
+							Code:    fiber.StatusForbidden,
+							Type:    errTypeAuthZ,
+							Message: exampleAuthZMessage,
+						}, func() ErrorEnvelope { return exampleAuthEnvelope(fiber.StatusForbidden) })},
+					}
+				}
+			}
 			// When UseNotFoundHandler() has been installed, every operation can
 			// surface the same shape under 404 — document it.
 			if o.notFoundInstalled {
@@ -534,6 +560,54 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	}
 
 	return spec
+}
+
+// isProtected reports whether the route authenticates its requests, and can
+// therefore answer 401.
+func (o *OApiApp) isProtected(op OpenAPIOperation) bool {
+	return o.config.EnableAuthorization && o.config.AuthService != nil && !securityDisabled(&op.Options)
+}
+
+// checksPermissions reports whether a protected route can answer 403: it
+// requires roles, scopes, or permissions on a resource of its input.
+func (o *OApiApp) checksPermissions(op OpenAPIOperation) bool {
+	if len(op.Options.RequiredRoles) > 0 || hasResourceField(op.InputType) {
+		return true
+	}
+	if len(o.config.SecuritySchemes) == 0 {
+		return false // Bearer-only validation ignores scopes
+	}
+	requirements, _ := op.Options.Security.([]map[string][]string)
+	if len(requirements) == 0 {
+		requirements = o.config.DefaultSecurity
+	}
+	for _, requirement := range requirements {
+		for _, scopes := range requirement {
+			if len(scopes) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasResourceField reports whether the input struct declares a resource
+// permission check (a string field with a resource tag).
+func hasResourceField(t reflect.Type) bool {
+	if t == nil {
+		return false
+	}
+	t = dereferenceType(t)
+	if t.Kind() != reflect.Struct {
+		return false
+	}
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Tag.Get("resource") != "" && field.Type.Kind() == reflect.String {
+			return true
+		}
+	}
+	return false
 }
 
 // GenerateOpenAPISpecYAML generates the OpenAPI spec in YAML format
@@ -1106,28 +1180,7 @@ func Method[TInput any, TOutput any, TError any](
 	fiberHandler := func(c fiber.Ctx) error {
 		input, err := parseInput[TInput](app, c, fullPath, &options)
 		if err != nil {
-			// Custom handlers, when configured, still take precedence and receive
-			// the raw error — they may produce any shape they want.
-			if authErr, ok := errors.AsType[*AuthError](err); ok && app.config.AuthErrorHandler != nil {
-				return app.config.AuthErrorHandler(c, authErr)
-			}
-			if app.config.ValidationErrorHandler != nil {
-				return app.config.ValidationErrorHandler(c, err)
-			}
-			// If the user opted into a unified shape, emit it for parse / auth /
-			// generic errors. Validation errors keep the rich ErrorEnvelope shape
-			// regardless — collapsing a multi-field validation failure into a
-			// single flat struct would lose the per-field info (loc / constraint
-			// / field) that clients rely on for form-level UX.
-			if app.config.DefaultErrorShape != nil && !isValidationError(err) {
-				cat := categorizeError(err)
-				return c.Status(cat.Code).JSON(materializeError(app.config.DefaultErrorShape, cat))
-			}
-			// Default response: structured envelope, one entry per failing field,
-			// status code chosen per error category (422 validation, 400 parse,
-			// 401/403 auth).
-			envelope, status := buildEnvelope(c, app.config, inputType, err)
-			return c.Status(status).JSON(envelope)
+			return app.respondError(c, inputType, err)
 		}
 
 		output, customErr := handler(c, input)
@@ -1150,7 +1203,65 @@ func Method[TInput any, TOutput any, TError any](
 		return nil
 	}
 
-	app.f.Add([]string{m}, fullPath, fiberHandler)
+	// Route chain: [authenticateHandler] + options.Middlewares + fiberHandler.
+	// With AuthenticateFirst, credentials are checked before anything reads the
+	// request, and the route middlewares can call GetAuthContext.
+	chain := make([]any, 0, len(options.Middlewares)+2)
+	if app.config.EnableAuthorization && app.config.AuthenticateFirst && !securityDisabled(&options) {
+		routeSecurity, _ := options.Security.([]map[string][]string)
+		chain = append(chain, app.authenticateHandler(inputType, routeSecurity))
+	}
+	for _, mw := range options.Middlewares {
+		if mw != nil {
+			chain = append(chain, mw)
+		}
+	}
+	chain = append(chain, fiberHandler)
+
+	app.f.Add([]string{m}, fullPath, chain[0], chain[1:]...)
+}
+
+// authenticateHandler builds the handler placed at the head of a protected
+// route when Config.AuthenticateFirst is set: it authenticates the request,
+// stores the AuthContext in c.Locals("auth") and moves on to the next handler.
+func (app *OApiApp) authenticateHandler(inputType reflect.Type, routeSecurity []map[string][]string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		authCtx, err := authenticate(c, &app.config, routeSecurity)
+		if err != nil {
+			return app.respondError(c, inputType, err)
+		}
+		if authCtx != nil {
+			c.Locals("auth", authCtx)
+		}
+		return c.Next()
+	}
+}
+
+// respondError writes the response for an error raised before the handler
+// runs (authentication, parsing, validation, authorization).
+func (app *OApiApp) respondError(c fiber.Ctx, inputType reflect.Type, err error) error {
+	// Custom handlers, when configured, still take precedence and receive
+	// the raw error — they may produce any shape they want.
+	if authErr, ok := errors.AsType[*AuthError](err); ok && app.config.AuthErrorHandler != nil {
+		return app.config.AuthErrorHandler(c, authErr)
+	}
+	if app.config.ValidationErrorHandler != nil {
+		return app.config.ValidationErrorHandler(c, err)
+	}
+	// If the user opted into a unified shape, emit it for parse / auth /
+	// generic errors. Validation errors keep the rich ErrorEnvelope shape
+	// regardless — collapsing a multi-field validation failure into a
+	// single flat struct would lose the per-field info (loc / constraint
+	// / field) that clients rely on for form-level UX.
+	if app.config.DefaultErrorShape != nil && !isValidationError(err) {
+		cat := categorizeError(err)
+		return c.Status(cat.Code).JSON(materializeError(app.config.DefaultErrorShape, cat))
+	}
+	// Default response: structured envelope, one entry per failing field,
+	// status code chosen per error category (422 validation, 400 parse,
+	// 401/403 auth).
+	envelope, status := buildEnvelope(c, app.config, inputType, err)
+	return c.Status(status).JSON(envelope)
 }
 
 // Get defines a GET operation for the OpenAPI documentation

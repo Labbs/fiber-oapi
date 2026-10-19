@@ -95,21 +95,31 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	}
 
 	// Validate authorization if enabled in configuration and not disabled for this route
-	if app.Config().EnableAuthorization && options != nil {
-		if securityValue, ok := options.Security.(string); ok && securityValue == "disabled" {
-			// Skip authorization for this route
-		} else {
-			cfg := app.Config()
-			if routeSecurity, ok := options.Security.([]map[string][]string); ok && len(routeSecurity) > 0 {
-				cfg.DefaultSecurity = routeSecurity
+	if app.config.EnableAuthorization && options != nil && !securityDisabled(options) {
+		if app.config.AuthenticateFirst {
+			// The request was authenticated before being read (see
+			// authenticateHandler); only roles and resource permissions,
+			// which need the input, are left.
+			authCtx, _ := c.Locals("auth").(*AuthContext)
+			if err := authorize(c, authCtx, input, app.config.AuthService, options.RequiredRoles, options.RequireAllRoles); err != nil {
+				return input, err
 			}
-			if err := validateAuthorization(c, input, cfg.AuthService, &cfg, options.RequiredRoles, options.RequireAllRoles); err != nil {
+		} else {
+			routeSecurity, _ := options.Security.([]map[string][]string)
+			if err := validateAuthorization(c, input, &app.config, routeSecurity, options.RequiredRoles, options.RequireAllRoles); err != nil {
 				return input, err
 			}
 		}
 	}
 
 	return input, nil
+}
+
+// securityDisabled reports whether the route opted out of authentication
+// with Security: "disabled".
+func securityDisabled(options *OpenAPIOptions) bool {
+	securityValue, ok := options.Security.(string)
+	return ok && securityValue == "disabled"
 }
 
 // handleCustomError emits the error instance a handler returned through its

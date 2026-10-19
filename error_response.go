@@ -556,6 +556,30 @@ func exampleNotFoundEnvelope() ErrorEnvelope {
 	}
 }
 
+// Messages used by the 401 / 403 spec examples.
+const (
+	exampleAuthNMessage = "authentication required"
+	exampleAuthZMessage = "insufficient permissions"
+)
+
+// exampleAuthEnvelope is the spec example of an authentication (401) or
+// authorization (403) failure, shaped as buildEnvelope emits it.
+func exampleAuthEnvelope(status int) ErrorEnvelope {
+	entryType, msg := errTypeAuthN, exampleAuthNMessage
+	if status == fiber.StatusForbidden {
+		entryType, msg = errTypeAuthZ, exampleAuthZMessage
+	}
+	return ErrorEnvelope{
+		Errors: []ValidationErrorEntry{{
+			Type: entryType,
+			Code: status,
+			Loc:  []any{"header", "Authorization"},
+			Msg:  msg,
+		}},
+		ResponseContext: ResponseContext{ResponseID: "bf0e9029-576b-42e8-84f9-ad0622972f50"},
+	}
+}
+
 func exampleParseEnvelope() ErrorEnvelope {
 	return ErrorEnvelope{
 		Errors: []ValidationErrorEntry{{
