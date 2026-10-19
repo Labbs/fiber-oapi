@@ -1412,6 +1412,14 @@ func (app *OApiApp) problemForError(c fiber.Ctx, inputType reflect.Type, err err
 		envelope, _ := buildEnvelope(c, app.config, inputType, err)
 		entries = envelope.Errors
 	}
+	// The detail repeats the first entry, which names the field as the
+	// client sent it (JSON / URI / header name) rather than its Go name.
+	if cat.Type == errTypeValidation && len(entries) > 0 {
+		cat.Message = entries[0].Msg
+		if len(entries) > 1 {
+			cat.Message = fmt.Sprintf("%s (and %d more)", entries[0].Msg, len(entries)-1)
+		}
+	}
 	return app.config.problemFor(cat, entries)
 }
 

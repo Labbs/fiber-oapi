@@ -74,7 +74,7 @@ func TestProblemDetails_EveryLibraryErrorIsAProblem(t *testing.T) {
 	require.Len(t, p.Errors, 1)
 	assert.Equal(t, []any{"body", "name"}, p.Errors[0].Loc)
 	assert.Equal(t, "min=3", p.Errors[0].Constraint)
-	assert.NotEmpty(t, p.Detail)
+	assert.Equal(t, "field 'name' must be at least 3", p.Detail, "the detail names the field as the client sent it")
 
 	status, p = readProblem(t, app, authed(jsonRequest("POST", "/items/1", `{"name": "widget", "age": "old"}`), "admin-token"))
 	assert.Equal(t, 400, status)
