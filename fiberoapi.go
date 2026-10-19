@@ -147,9 +147,6 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		if provided.IncludeInvalidValueInErrors {
 			cfg.IncludeInvalidValueInErrors = true
 		}
-		if provided.AuthenticateFirst {
-			cfg.AuthenticateFirst = true
-		}
 		if provided.ProblemDetails {
 			cfg.ProblemDetails = true
 		}
@@ -1316,10 +1313,11 @@ func Method[TInput any, TOutput any, TError any](
 	}
 
 	// Route chain: [authenticateHandler] + options.Middlewares + fiberHandler.
-	// With AuthenticateFirst, credentials are checked before anything reads the
-	// request, and the route middlewares can call GetAuthContext.
+	// On a protected route, credentials are checked before anything reads the
+	// request: a request that fails authentication never has its body decoded,
+	// and the route middlewares can call GetAuthContext.
 	chain := make([]any, 0, len(options.Middlewares)+2)
-	if app.config.EnableAuthorization && app.config.AuthenticateFirst && !securityDisabled(&options) {
+	if app.config.EnableAuthorization && app.config.AuthService != nil && !securityDisabled(&options) {
 		routeSecurity, _ := options.Security.([]map[string][]string)
 		chain = append(chain, app.authenticateHandler(inputType, routeSecurity))
 	}
@@ -1357,9 +1355,9 @@ func isNilPointer(v any) bool {
 	return rv.Kind() == reflect.Ptr && rv.IsNil()
 }
 
-// authenticateHandler builds the handler placed at the head of a protected
-// route when Config.AuthenticateFirst is set: it authenticates the request,
-// stores the AuthContext in c.Locals("auth") and moves on to the next handler.
+// authenticateHandler builds the handler placed at the head of every protected
+// route: it authenticates the request, stores the AuthContext in
+// c.Locals("auth") and moves on to the next handler.
 func (app *OApiApp) authenticateHandler(inputType reflect.Type, routeSecurity []map[string][]string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authCtx, err := authenticate(c, &app.config, routeSecurity)

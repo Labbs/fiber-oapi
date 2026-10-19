@@ -47,12 +47,11 @@ func registerAuthFirstRoute(oapi *OApiApp) {
 	}, OpenAPIOptions{})
 }
 
-func TestAuthenticateFirst_RejectsBeforeReadingTheBody(t *testing.T) {
+func TestAuthFirst_RejectsBeforeReadingTheBody(t *testing.T) {
 	app, decodes := newSpyApp()
 	oapi := New(app, Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
-		AuthenticateFirst:   true,
 		AuthService:         NewMockAuthService(),
 	})
 	registerAuthFirstRoute(oapi)
@@ -66,42 +65,38 @@ func TestAuthenticateFirst_RejectsBeforeReadingTheBody(t *testing.T) {
 	assert.Equal(t, int32(2), decodes.Load())
 }
 
-func TestAuthenticateFirst_DisabledKeepsTheV32Order(t *testing.T) {
-	cases := []struct {
-		name              string
-		token, body       string
-		legacy, authFirst int
-	}{
-		{name: "malformed body, no token", body: `{"name": 42`, legacy: 400, authFirst: 401},
-		{name: "invalid body, no token", body: `{"name": "x"}`, legacy: 422, authFirst: 401},
-		{name: "valid body, no token", body: `{"name": "widget"}`, legacy: 401, authFirst: 401},
-		{name: "valid body, valid token", token: "valid-token", body: `{"name": "widget"}`, legacy: 200, authFirst: 200},
-	}
-	for _, authFirst := range []bool{false, true} {
-		app := fiber.New()
-		oapi := New(app, Config{
-			EnableValidation:    true,
-			EnableAuthorization: true,
-			AuthenticateFirst:   authFirst,
-			AuthService:         NewMockAuthService(),
-		})
-		registerAuthFirstRoute(oapi)
-		for _, tc := range cases {
-			want := tc.legacy
-			if authFirst {
-				want = tc.authFirst
-			}
-			assert.Equal(t, want, postJSON(t, app, "/items", tc.token, tc.body), "%s (AuthenticateFirst=%v)", tc.name, authFirst)
-		}
-	}
-}
-
-func TestAuthenticateFirst_RouteMiddlewareSeesTheAuthContext(t *testing.T) {
+func TestAuthFirst_AuthErrorsComeBeforeInputErrors(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app, Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
-		AuthenticateFirst:   true,
+		AuthService:         NewMockAuthService(),
+	})
+	registerAuthFirstRoute(oapi)
+
+	cases := []struct {
+		name        string
+		token, body string
+		want        int
+	}{
+		{name: "malformed body, no token", body: `{"name": 42`, want: 401},
+		{name: "invalid body, no token", body: `{"name": "x"}`, want: 401},
+		{name: "valid body, no token", body: `{"name": "widget"}`, want: 401},
+		{name: "malformed body, bad token", token: "bad-token", body: `{"name": 42`, want: 401},
+		{name: "malformed body, valid token", token: "valid-token", body: `{"name": 42`, want: 400},
+		{name: "invalid body, valid token", token: "valid-token", body: `{"name": "x"}`, want: 422},
+		{name: "valid body, valid token", token: "valid-token", body: `{"name": "widget"}`, want: 200},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, postJSON(t, app, "/items", tc.token, tc.body), tc.name)
+	}
+}
+
+func TestAuthFirst_RouteMiddlewareSeesTheAuthContext(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app, Config{
+		EnableValidation:    true,
+		EnableAuthorization: true,
 		AuthService:         NewMockAuthService(),
 	})
 	var seen string
@@ -125,12 +120,11 @@ type authFirstDocInput struct {
 	DocID string `uri:"docId" resource:"document" action:"delete"`
 }
 
-func TestAuthenticateFirst_RolesAndResourcesStillApply(t *testing.T) {
+func TestAuthFirst_RolesAndResourcesStillApply(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app, Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
-		AuthenticateFirst:   true,
 		AuthService:         NewMockAuthService(),
 	})
 	Get(oapi, "/admin", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {
@@ -155,13 +149,12 @@ func TestAuthenticateFirst_RolesAndResourcesStillApply(t *testing.T) {
 	assert.Equal(t, 200, del("admin-token"))
 }
 
-func TestAuthenticateFirst_DisabledRouteSkipsAuthentication(t *testing.T) {
+func TestAuthFirst_DisabledRouteSkipsAuthentication(t *testing.T) {
 	var validations atomic.Int32
 	app := fiber.New()
 	oapi := New(app, Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
-		AuthenticateFirst:   true,
 		AuthService: TokenValidatorFunc(func(string) (*AuthContext, error) {
 			validations.Add(1)
 			return nil, errTokenExpired
@@ -176,12 +169,11 @@ func TestAuthenticateFirst_DisabledRouteSkipsAuthentication(t *testing.T) {
 	assert.Zero(t, validations.Load())
 }
 
-func TestAuthenticateFirst_UsesTheErrorHandlers(t *testing.T) {
+func TestAuthFirst_UsesTheErrorHandlers(t *testing.T) {
 	app := fiber.New()
 	oapi := New(app, Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
-		AuthenticateFirst:   true,
 		AuthService:         causeAuthService{},
 		AuthErrorHandler:    classifyingAuthErrorHandler,
 	})

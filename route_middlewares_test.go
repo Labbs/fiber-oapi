@@ -91,13 +91,12 @@ func TestRouteMiddlewares_CanStopTheChain(t *testing.T) {
 	assert.Equal(t, 1, handlerCalls)
 }
 
-func TestRouteMiddlewares_RunAfterAuthenticateFirst(t *testing.T) {
+func TestRouteMiddlewares_RunAfterAuthentication(t *testing.T) {
 	var trace []string
 	app := fiber.New()
 	oapi := New(app, Config{
 		EnableValidation:    true,
 		EnableAuthorization: true,
-		AuthenticateFirst:   true,
 		AuthService:         NewMockAuthService(),
 	})
 	Get(oapi, "/me", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {

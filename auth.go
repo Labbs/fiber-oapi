@@ -146,23 +146,11 @@ func RoleGuard(validator AuthorizationService, requiredRoles ...string) fiber.Ha
 	}
 }
 
-// validateAuthorization authenticates the request, stores the AuthContext in
-// c.Locals("auth"), then checks roles and resource permissions. routeSecurity,
-// when non-empty, replaces Config.DefaultSecurity for this route.
-func validateAuthorization(c fiber.Ctx, input interface{}, config *Config, routeSecurity []map[string][]string, requiredRoles []string, requireAllRoles bool) error {
-	authCtx, err := authenticate(c, config, routeSecurity)
-	if err != nil {
-		return err
-	}
-	if authCtx != nil {
-		c.Locals("auth", authCtx)
-	}
-	return authorize(c, authCtx, input, config.AuthService, requiredRoles, requireAllRoles)
-}
-
 // authenticate validates the credentials of the request against the
 // configured security schemes and returns the resulting AuthContext. It does
-// not need the request input, so it can run before the body is read.
+// not need the request input, so it runs before the body is read, in
+// authenticateHandler. routeSecurity, when non-empty, replaces
+// Config.DefaultSecurity for the route.
 // It returns (nil, nil) when no AuthService is configured.
 // When SecuritySchemes is empty, it falls back to Bearer-only validation for backward compatibility.
 func authenticate(c fiber.Ctx, config *Config, routeSecurity []map[string][]string) (*AuthContext, error) {

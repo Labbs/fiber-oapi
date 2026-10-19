@@ -218,7 +218,6 @@ func TestAlign_V33Options_RuntimeMatchesSpec(t *testing.T) {
 	oapi := New(app, Config{
 		EnableValidation:     true,
 		EnableAuthorization:  true,
-		AuthenticateFirst:    true,
 		AuthService:          staticTokens,
 		ProblemDetails:       true,
 		ValidationStatusCode: 400,

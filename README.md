@@ -25,7 +25,6 @@ go get github.com/labbs/fiber-oapi/v3
 ```
 
 > **What's new in v3.3**
-> - [`AuthenticateFirst`](#authenticating-before-reading-the-request-authenticatefirst): check credentials before the body is read.
 > - [`AuthError.Err`](#authenticationauthorization-errors): the cause of an authentication failure (`errors.Is` / `errors.As`), and its status through `HTTPStatus()`.
 > - [`TokenValidatorFunc` and `ContextTokenValidator`](#token-only-services-tokenvalidatorfunc): an auth service that only validates tokens.
 > - [Problem details (RFC 9457)](#problem-details-rfc-9457): `Problem`, `ContentTyper`, `ProblemDetails`, `ValidationStatusCode`, `ProblemCodes`.
@@ -35,9 +34,10 @@ go get github.com/labbs/fiber-oapi/v3
 > - [Route middlewares](#route-middlewares): `OpenAPIOptions.Middlewares`.
 > - Protected routes document their 401, and 403 when they check roles, scopes or resources.
 >
-> Everything above is opt-in, except **two fixes that change behavior**:
-> 1. **Path, query and header values now win over the body.** The body used to be decoded after the path and query, and the JSON decoder matches keys case-insensitively: a field tagged `uri:"id"` without `json:"-"` could be overwritten by `{"id": "..."}` in the body. The body is now decoded first.
-> 2. **`uri` fields no longer appear in the documented request body.** They were already documented as path parameters.
+> Everything above is opt-in, except **three changes of behavior**:
+> 1. **[Authentication runs first.](#authentication-runs-first)** A protected route checks the credentials before reading its input: a request that fails authentication gets its 401 without its body being decoded, even if that body is malformed or invalid (it used to get a 400 or 422).
+> 2. **Path, query and header values now win over the body.** The body used to be decoded after the path and query, and the JSON decoder matches keys case-insensitively: a field tagged `uri:"id"` without `json:"-"` could be overwritten by `{"id": "..."}` in the body. The body is now decoded first.
+> 3. **`uri` fields no longer appear in the documented request body.** They were already documented as path parameters.
 >
 > Also: `SmartAuthMiddleware` and `MultiSchemeAuthMiddleware` now go through `Config.AuthErrorHandler` when one is set.
 
@@ -98,7 +98,6 @@ type Config struct {
     DefaultErrorShape      any                       // One shape for library errors (see below)
     IncludeInvalidValueInErrors bool                 // Echo the offending value in error entries (default: false)
 
-    AuthenticateFirst      bool                      // Authenticate before reading the request (default: false)
     ProblemDetails         bool                      // Library errors as RFC 9457 problems (default: false)
     ValidationStatusCode   int                       // Status of validation errors (default: 422)
     ProblemCodes           map[string]string         // Replace the Code of a problem, per category
@@ -225,9 +224,9 @@ is merged last and replaces any generated response with the same key.
 ## Route middlewares
 
 `OpenAPIOptions.Middlewares` runs handlers on one route only, before its input
-is read — after the group middlewares and, with
-[`AuthenticateFirst`](#authenticating-before-reading-the-request-authenticatefirst),
-after authentication. A middleware can answer on its own to stop the chain:
+is read — after the group middlewares and, on a protected route, after
+[authentication](#authentication-runs-first). A middleware can answer on its
+own to stop the chain:
 
 ```go
 fiberoapi.Post(v1, "/auth/login", ctrl.Login, fiberoapi.OpenAPIOptions{
@@ -802,23 +801,22 @@ type ContextTokenValidator interface {
 }
 ```
 
-### Authenticating before reading the request (`AuthenticateFirst`)
+### Authentication runs first
 
-By default, a route reads its input (path, query, body, headers), validates
-it, and only then checks the credentials: a request without a token has its
-body decoded, and a request with an expired token and an invalid body gets a
-validation error. With `Config.AuthenticateFirst`, the credentials are checked
-first, in a handler placed at the head of every protected route:
+On a protected route, the credentials are checked before anything reads the
+request, in a handler placed at the head of the route:
 
-```go
-oapi := fiberoapi.New(app, fiberoapi.Config{
-    EnableAuthorization: true,
-    AuthenticateFirst:   true,
-    AuthService:         authService,
-})
-```
+1. authentication (401 on failure);
+2. the [route middlewares](#route-middlewares);
+3. reading the input (path, query, body, headers) and validating it (400, 422);
+4. roles and resource permissions (403);
+5. the handler.
 
-- A request without valid credentials gets its 401 before anything reads it.
+Group middlewares (`Group(prefix, handlers...)`, `Use`) run before step 1.
+
+- A request without valid credentials gets its 401 before its body is
+  decoded: no work is spent on a request that will be rejected, and an
+  unauthenticated client cannot probe the validation rules of the route.
 - [Route middlewares](#route-middlewares) run after authentication and can call
   `GetAuthContext(c)`.
 - Roles and resource permissions are still checked after the input is parsed,
