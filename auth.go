@@ -88,16 +88,22 @@ func RequireResourceAccess(c fiber.Ctx, authService AuthorizationService, resour
 
 // BearerTokenMiddleware creates a JWT/Bearer middleware
 func BearerTokenMiddleware(validator AuthorizationService) fiber.Handler {
+	return bearerTokenMiddleware(validator, nil)
+}
+
+// bearerTokenMiddleware is BearerTokenMiddleware with an optional Config whose
+// error handling it follows (see authFailure).
+func bearerTokenMiddleware(validator AuthorizationService, config *Config) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if authHeader == "" {
-			return c.Status(401).JSON(fiber.Map{
+			return authFailure(c, config, &AuthError{StatusCode: 401, Message: "Authorization header required"}, 401, fiber.Map{
 				"error": "Authorization header required",
 			})
 		}
 
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			return c.Status(401).JSON(fiber.Map{
+			return authFailure(c, config, &AuthError{StatusCode: 401, Message: "Bearer token required"}, 401, fiber.Map{
 				"error": "Bearer token required",
 			})
 		}
@@ -105,7 +111,7 @@ func BearerTokenMiddleware(validator AuthorizationService) fiber.Handler {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		authCtx, err := validator.ValidateToken(token)
 		if err != nil {
-			return c.Status(401).JSON(fiber.Map{
+			return authFailure(c, config, authErrorFrom(err), 401, fiber.Map{
 				"error":   "Invalid token",
 				"details": err.Error(),
 			})
@@ -156,16 +162,8 @@ func validateAuthorization(c fiber.Ctx, input interface{}, authService Authoriza
 		authCtx, err := validateBearerToken(c, authService)
 		if err != nil {
 			// Preserve typed AuthError (including 5xx) and map ScopeError to 403,
-			// falling back to 401 only for untyped errors.
-			var authErr *AuthError
-			if errors.As(err, &authErr) {
-				return err
-			}
-			var scopeErr *ScopeError
-			if errors.As(err, &scopeErr) {
-				return &AuthError{StatusCode: 403, Message: err.Error()}
-			}
-			return &AuthError{StatusCode: 401, Message: err.Error()}
+			// falling back to 401 only for untyped errors. The cause is kept.
+			return authErrorFrom(err)
 		}
 		c.Locals("auth", authCtx)
 
@@ -205,15 +203,7 @@ func validateAuthorization(c fiber.Ctx, input interface{}, authService Authoriza
 	}
 
 	// Propagate typed errors (AuthError, ScopeError) without re-wrapping
-	var existingAuthErr *AuthError
-	if errors.As(lastErr, &existingAuthErr) {
-		return lastErr
-	}
-	var scopeErr *ScopeError
-	if errors.As(lastErr, &scopeErr) {
-		return &AuthError{StatusCode: 403, Message: lastErr.Error()}
-	}
-	return &AuthError{StatusCode: 401, Message: lastErr.Error()}
+	return authErrorFrom(lastErr)
 }
 
 // checkRequiredRoles checks the authenticated user's roles against the required roles.
@@ -270,7 +260,7 @@ func validateResourceAccess(c fiber.Ctx, authCtx *AuthContext, input interface{}
 
 				canAccess, err := authService.CanAccessResource(authCtx, resourceTag, resourceID, actionTag)
 				if err != nil {
-					return &AuthError{StatusCode: 500, Message: fmt.Sprintf("authorization check failed: %v", err)}
+					return &AuthError{StatusCode: 500, Message: fmt.Sprintf("authorization check failed: %v", err), Err: err}
 				}
 
 				if !canAccess {

@@ -32,7 +32,7 @@ func SmartAuthMiddleware(authService AuthorizationService, config Config) fiber.
 	if len(config.SecuritySchemes) > 0 {
 		authMiddleware = MultiSchemeAuthMiddleware(authService, config)
 	} else {
-		authMiddleware = BearerTokenMiddleware(authService)
+		authMiddleware = bearerTokenMiddleware(authService, &config)
 	}
 
 	// Paths to exclude from authentication
@@ -66,7 +66,7 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 			}
 			var authErr *AuthError
 			if errors.As(err, &authErr) && authErr.StatusCode >= 500 {
-				return c.Status(authErr.StatusCode).JSON(fiber.Map{
+				return authFailure(c, &config, authErr, authErr.StatusCode, fiber.Map{
 					"error":   "Server configuration error",
 					"details": authErr.Message,
 				})
@@ -77,7 +77,8 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 		if lastErr == nil {
 			// No security requirements were configured — this is a server misconfiguration,
 			// not a client authentication failure.
-			return c.Status(500).JSON(fiber.Map{
+			authErr := &AuthError{StatusCode: 500, Message: "no security schemes configured"}
+			return authFailure(c, &config, authErr, 500, fiber.Map{
 				"error":   "Server configuration error",
 				"details": "no security schemes configured",
 			})
@@ -91,11 +92,21 @@ func MultiSchemeAuthMiddleware(authService AuthorizationService, config Config) 
 			errorLabel = "Authorization failed"
 		}
 
-		return c.Status(status).JSON(fiber.Map{
+		return authFailure(c, &config, authErrorFrom(lastErr), status, fiber.Map{
 			"error":   errorLabel,
 			"details": lastErr.Error(),
 		})
 	}
+}
+
+// authFailure lets a middleware built from a Config honour its
+// AuthErrorHandler: when one is set it receives the AuthError, otherwise the
+// legacy body is written with the legacy status.
+func authFailure(c fiber.Ctx, config *Config, authErr *AuthError, status int, body fiber.Map) error {
+	if config != nil && config.AuthErrorHandler != nil {
+		return config.AuthErrorHandler(c, authErr)
+	}
+	return c.Status(status).JSON(body)
 }
 
 // BasicAuthMiddleware creates a standalone middleware for HTTP Basic authentication.
