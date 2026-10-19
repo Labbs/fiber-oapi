@@ -98,7 +98,7 @@ func validateBasicAuth(c fiber.Ctx, authService AuthorizationService) (*AuthCont
 		return nil, fmt.Errorf("invalid Basic auth format: expected username:password")
 	}
 
-	return basicValidator.ValidateBasicAuth(parts[0], parts[1])
+	return requireAuthContext(basicValidator.ValidateBasicAuth(parts[0], parts[1]))
 }
 
 // validateAPIKey validates an API key from header, query, or cookie.
@@ -124,7 +124,7 @@ func validateAPIKey(c fiber.Ctx, scheme SecurityScheme, authService Authorizatio
 		return nil, fmt.Errorf("API key not found in %s parameter '%s'", scheme.In, scheme.Name)
 	}
 
-	return apiKeyValidator.ValidateAPIKey(key, scheme.In, scheme.Name)
+	return requireAuthContext(apiKeyValidator.ValidateAPIKey(key, scheme.In, scheme.Name))
 }
 
 // validateAWSSigV4 validates an AWS Signature V4 Authorization header.
@@ -161,7 +161,7 @@ func validateAWSSigV4(c fiber.Ctx, authService AuthorizationService) (*AuthConte
 		params.Headers[headerName] = c.Get(headerName)
 	}
 
-	return awsValidator.ValidateAWSSignature(params)
+	return requireAuthContext(awsValidator.ValidateAWSSignature(params))
 }
 
 // parseAWSSigV4Header parses an AWS SigV4 Authorization header into its components.

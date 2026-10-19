@@ -36,7 +36,7 @@ go get github.com/labbs/fiber-oapi/v3
 >
 > Everything above is opt-in, except **three changes of behavior**:
 > 1. **[Authentication runs first.](#authentication-runs-first)** A protected route checks the credentials before reading its input: a request that fails authentication gets its 401 without its body being decoded, even if that body is malformed or invalid (it used to get a 400 or 422).
-> 2. **Path, query and header values now win over the body.** The body used to be decoded after the path and query, and the JSON decoder matches keys case-insensitively: a field tagged `uri:"id"` without `json:"-"` could be overwritten by `{"id": "..."}` in the body. The body is now decoded first.
+> 2. **Path, query and header values now win over the body.** The body used to be decoded after the path and query, and the JSON decoder matches keys case-insensitively: a field tagged `uri:"id"` without `json:"-"` could be overwritten by `{"id": "..."}` in the body. The body is now decoded first, and path, query and header fields are reset after it, so they never take a value from the body — not even when the parameter is absent from the request (fixed in v3.3.1).
 > 3. **`uri` fields no longer appear in the documented request body.** They were already documented as path parameters.
 >
 > Also: `SmartAuthMiddleware` and `MultiSchemeAuthMiddleware` now go through `Config.AuthErrorHandler` when one is set.
@@ -136,7 +136,7 @@ fiberoapi.Put(router, path, handler, options)
 fiberoapi.Patch(router, path, handler, options)
 fiberoapi.Delete(router, path, handler, options)
 fiberoapi.Head(router, path, handler, options)
-fiberoapi.Method(method, router, path, handler, options) // Custom HTTP method
+fiberoapi.Method(router, method, path, handler, options) // Custom HTTP method
 ```
 
 ## Parameter Types
@@ -150,8 +150,11 @@ type MyInput struct {
 }
 ```
 
-The body is decoded first, then the path, query and header values are bound:
-they always win over a body key with the same name.
+Path, query and header fields never take their value from the body, even when
+the parameter is absent from the request: the body is decoded first, those
+fields are reset, then bound from the request. A field that also declares a
+body tag (e.g. `query:"sort" json:"sort"`) accepts either, and the request
+parameter wins when present.
 
 Special tags:
 - `body:"raw"` — Receive the request body as-is in a `[]byte` field (see [Raw request body](#raw-request-body-binary))
@@ -524,8 +527,8 @@ AuthErrorHandler: func(c fiber.Ctx, err *fiberoapi.AuthError) error {
 
 Any error value — a `TError`, an entry of `OpenAPIOptions.Errors` — can choose
 its `Content-Type` by implementing `ContentTyper`; `Problem` answers
-`application/problem+json`. A handler can therefore return a `*Problem` as its
-`TError`:
+`application/problem+json`. A handler can therefore return a `Problem` or a
+`*Problem` as its `TError`:
 
 ```go
 type ContentTyper interface{ ContentType() string }
@@ -790,6 +793,9 @@ oapi := fiberoapi.New(app, fiberoapi.Config{
 `AuthContext`. Resource permissions are not supported: a route that needs them
 answers 500 (`ErrResourceAuthorizationNotConfigured`), never an access granted
 by default.
+
+A validator that returns `(nil, nil)` — no error, but no `AuthContext` either —
+is treated as a failed authentication (401), whatever the scheme.
 
 A service that needs the request to validate a Bearer token (client IP,
 request context...) can implement `ContextTokenValidator`; it is then used

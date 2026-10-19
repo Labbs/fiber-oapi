@@ -162,3 +162,19 @@ func TestResponseContentType_JSONOutput(t *testing.T) {
 	assert.Equal(t, "application/vnd.api+json", resp.Header.Get("Content-Type"))
 	assert.Contains(t, operationResponses(oapi, "/doc", "get")["200"].(map[string]any)["content"], "application/vnd.api+json")
 }
+
+func TestRawResponse_ByValue(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Get(oapi, "/value", func(c fiber.Ctx, _ struct{}) (RawResponse, struct{}) {
+		return RawResponse{ContentType: "image/png", Body: []byte("png")}, struct{}{}
+	}, OpenAPIOptions{})
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/value", nil))
+	require.NoError(t, err)
+	raw, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "image/png", resp.Header.Get("Content-Type"))
+	assert.Equal(t, "png", string(raw), "a RawResponse by value is written as-is, not encoded as JSON")
+	assert.Contains(t, operationResponses(oapi, "/value", "get")["200"].(map[string]any)["content"], fiber.MIMEOctetStream)
+}

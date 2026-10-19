@@ -242,3 +242,27 @@ func operationResponses(oapi *OApiApp, path, method string) map[string]any {
 	spec := oapi.GenerateOpenAPISpec()
 	return spec["paths"].(map[string]any)[path].(map[string]any)[method].(map[string]any)["responses"].(map[string]any)
 }
+
+func TestProblem_ByValue(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Get(oapi, "/value", func(c fiber.Ctx, _ struct{}) (fiber.Map, Problem) {
+		return nil, Problem{Status: 409, Title: "Conflict", Code: "already_exists"}
+	}, OpenAPIOptions{})
+	Get(oapi, "/declared", func(c fiber.Ctx, _ struct{}) (fiber.Map, error) {
+		return nil, Problem{Status: 409, Title: "Conflict"}
+	}, OpenAPIOptions{Errors: []any{Problem{Status: 409, Title: "Conflict"}}})
+
+	status, p := readProblem(t, app, httptest.NewRequest("GET", "/value", nil))
+	assert.Equal(t, 409, status)
+	assert.Equal(t, "already_exists", p.Code)
+	status, _ = readProblem(t, app, httptest.NewRequest("GET", "/declared", nil))
+	assert.Equal(t, 409, status)
+
+	catchAll := operationResponses(oapi, "/value", "get")["4XX"].(map[string]any)["content"].(map[string]any)
+	assert.Contains(t, catchAll, MIMEApplicationProblemJSON)
+	declared := operationResponses(oapi, "/declared", "get")
+	require.Contains(t, declared, "409", "the status comes from HTTPStatus(), not from the Code string")
+	assert.Contains(t, declared["409"].(map[string]any)["content"], MIMEApplicationProblemJSON)
+	assert.NotContains(t, declared, "500")
+}

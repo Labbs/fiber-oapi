@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,4 +68,65 @@ func TestBindingOrder_BodySchemaExcludesPathParameters(t *testing.T) {
 	assert.NotContains(t, props, "Tenant")
 	assert.Contains(t, props, "name")
 	assert.NotContains(t, schema, "required", "the only required field is the path parameter")
+}
+
+// proxyInput mimics a handler that trusts identity headers set by a proxy.
+type proxyInput struct {
+	ID     string `uri:"id"`
+	UserID string `header:"X-User-Id"`
+	Filter string `query:"filter"`
+	Name   string `json:"name"`
+	// Sort declares both: it is accepted from the query or from the body.
+	Sort string `query:"sort" json:"sort"`
+}
+
+func TestBindingOrder_AbsentParametersAreNotFilledFromTheBody(t *testing.T) {
+	var got proxyInput
+	app := fiber.New()
+	oapi := New(app)
+	Put(oapi, "/items/:id", func(c fiber.Ctx, in proxyInput) (fiber.Map, struct{}) {
+		got = in
+		return fiber.Map{}, struct{}{}
+	}, OpenAPIOptions{})
+
+	send := func(contentType, body, query string) {
+		t.Helper()
+		got = proxyInput{}
+		req := httptest.NewRequest("PUT", "/items/from-path"+query, strings.NewReader(body))
+		req.Header.Set("Content-Type", contentType)
+		resp, err := app.Test(req)
+		require.NoError(t, err)
+		require.Equal(t, 200, resp.StatusCode)
+	}
+
+	send("application/json", `{"id":"evil","userId":"evil","x-user-id":"evil","filter":"evil","name":"widget","sort":"from-body"}`, "")
+	assert.Equal(t, "from-path", got.ID)
+	assert.Empty(t, got.UserID, "a header absent from the request must not come from the body")
+	assert.Empty(t, got.Filter, "a query parameter absent from the request must not come from the body")
+	assert.Equal(t, "widget", got.Name)
+	assert.Equal(t, "from-body", got.Sort, "a field that also declares a json tag accepts the body")
+
+	send("application/json", `{"sort":"from-body"}`, "?sort=from-query")
+	assert.Equal(t, "from-query", got.Sort, "the query still wins when present")
+
+	send("application/x-www-form-urlencoded", "UserID=evil&Filter=evil&ID=evil", "")
+	assert.Equal(t, "from-path", got.ID)
+	assert.Empty(t, got.UserID, "the same holds for form bodies")
+	assert.Empty(t, got.Filter)
+}
+
+func TestParamOnlyFields(t *testing.T) {
+	type input struct {
+		Path     string `uri:"id"`
+		Header   string `header:"X-A"`
+		Hidden   string `header:"X-B" json:"-"`
+		Both     string `query:"q" json:"q,omitempty"`
+		FormBoth string `query:"f" form:"f"`
+		Body     string `json:"body"`
+		private  string `header:"X-C"`
+	}
+	assert.Equal(t, []int{0, 1, 2}, paramOnlyFields(reflect.TypeFor[input]()))
+	assert.Equal(t, []int{0, 1, 2}, paramOnlyFields(reflect.TypeFor[*input]()))
+	assert.Nil(t, paramOnlyFields(reflect.TypeFor[string]()))
+	assert.Nil(t, paramOnlyFields(nil))
 }

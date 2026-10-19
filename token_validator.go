@@ -53,7 +53,21 @@ type ContextTokenValidator interface {
 // service implements ContextTokenValidator.
 func validateToken(c fiber.Ctx, authService AuthorizationService, token string) (*AuthContext, error) {
 	if ctxValidator, ok := authService.(ContextTokenValidator); ok {
-		return ctxValidator.ValidateTokenCtx(c, token)
+		return requireAuthContext(ctxValidator.ValidateTokenCtx(c, token))
 	}
-	return authService.ValidateToken(token)
+	return requireAuthContext(authService.ValidateToken(token))
+}
+
+// errNoAuthContext reports a validator that accepted the credentials without
+// returning an AuthContext. The request is treated as unauthenticated (401).
+var errNoAuthContext = errors.New("authentication failed: the validator returned no authentication context")
+
+// requireAuthContext turns a (nil, nil) result of a validator into an
+// authentication failure, so that nothing downstream dereferences a nil
+// AuthContext.
+func requireAuthContext(authCtx *AuthContext, err error) (*AuthContext, error) {
+	if err == nil && authCtx == nil {
+		return nil, errNoAuthContext
+	}
+	return authCtx, err
 }
