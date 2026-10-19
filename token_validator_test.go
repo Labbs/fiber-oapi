@@ -2,10 +2,12 @@ package fiberoapi
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTokenValidatorApp(t *testing.T, svc AuthorizationService) (*fiber.App, *OApiApp) {
@@ -127,4 +129,57 @@ func TestContextTokenValidator_IsPreferred(t *testing.T) {
 	resp, err := app.Test(req)
 	assert.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode, "BearerTokenMiddleware prefers ValidateTokenCtx too")
+}
+
+// nilContextService accepts every credential without returning a context.
+type nilContextService struct{ causeAuthService }
+
+func (nilContextService) ValidateToken(string) (*AuthContext, error)             { return nil, nil }
+func (nilContextService) ValidateBasicAuth(string, string) (*AuthContext, error) { return nil, nil }
+
+func TestNilAuthContext_IsAnAuthenticationFailure(t *testing.T) {
+	for name, schemes := range map[string]map[string]SecurityScheme{
+		"bearer only":      nil,
+		"security schemes": {"bearerAuth": {Type: "http", Scheme: "bearer"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, decodes := newSpyApp()
+			oapi := New(app, Config{
+				EnableValidation:    true,
+				EnableAuthorization: true,
+				AuthService:         nilContextService{},
+				SecuritySchemes:     schemes,
+			})
+			registerAuthFirstRoute(oapi)
+
+			assert.Equal(t, 401, postJSON(t, app, "/items", "any", `{"name": "widget"}`))
+			assert.Zero(t, decodes.Load())
+		})
+	}
+
+	basic := SecurityScheme{Type: "http", Scheme: "basic"}
+	for name, mw := range map[string]fiber.Handler{
+		"BearerTokenMiddleware": BearerTokenMiddleware(nilContextService{}),
+		"SmartAuthMiddleware": SmartAuthMiddleware(nilContextService{}, Config{
+			SecuritySchemes: map[string]SecurityScheme{"bearerAuth": {Type: "http", Scheme: "bearer"}},
+		}),
+		"BasicAuthMiddleware": BasicAuthMiddleware(nilContextService{}),
+		"MultiSchemeAuthMiddleware basic": MultiSchemeAuthMiddleware(nilContextService{}, Config{
+			SecuritySchemes: map[string]SecurityScheme{"basicAuth": basic},
+		}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			app := fiber.New()
+			app.Use(mw)
+			app.Get("/me", func(c fiber.Ctx) error { return c.SendString("ok") })
+
+			req := newBearerRequest("GET", "/me", "any")
+			if strings.Contains(name, "Basic") || strings.Contains(name, "basic") {
+				req.SetBasicAuth("user", "pass")
+			}
+			resp, err := app.Test(req)
+			require.NoError(t, err)
+			assert.Equal(t, 401, resp.StatusCode)
+		})
+	}
 }
