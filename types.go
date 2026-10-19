@@ -184,6 +184,13 @@ type OpenAPIOptions struct {
 	// with. Default: application/octet-stream for an input with a body:"raw"
 	// field, application/json otherwise.
 	RequestContentType string `json:"-"`
+
+	// ResponseContentType is the media type of the success response. For an
+	// output that implements Responder, it is documented with a binary schema
+	// (a string one for text/...), e.g. "application/octet-stream" (the
+	// default) or "text/event-stream". For a JSON output, the JSON is sent and
+	// documented under it (default application/json).
+	ResponseContentType string `json:"-"`
 }
 
 // OpenAPIOperation represents a registered operation
@@ -194,6 +201,8 @@ type OpenAPIOperation struct {
 	InputType  reflect.Type
 	OutputType reflect.Type
 	ErrorType  reflect.Type
+
+	responder bool // the output implements Responder
 }
 
 type OpenAPIParameter struct {

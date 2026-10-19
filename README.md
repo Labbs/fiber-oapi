@@ -163,6 +163,106 @@ type Input struct {
 }
 ```
 
+## Responses written by the handler (binary, streams, SSE)
+
+A handler normally returns a value that the library encodes as JSON. When the
+output implements `Responder`, the library calls its `Respond` method instead,
+and the output writes its own status, headers and body. The success status of
+the route (see [Success status](#success-status-201-204-and-extra-responses))
+is set before `Respond` runs, and `Respond` may override it.
+
+```go
+type Responder interface {
+    Respond(c fiber.Ctx) error
+}
+```
+
+`RawResponse` covers the common case of a binary body:
+
+```go
+fiberoapi.Get(v1, "/blobs/:id",
+    func(c fiber.Ctx, in GetBlobInput) (*fiberoapi.RawResponse, error) {
+        data, err := store.Get(in.ID)
+        if err != nil {
+            return nil, err
+        }
+        return &fiberoapi.RawResponse{
+            ContentType: "application/octet-stream", // default
+            Body:        data,
+            // Status: 0 keeps the success status of the route (200 by default)
+        }, nil
+    },
+    fiberoapi.OpenAPIOptions{ResponseContentType: "application/octet-stream"},
+)
+```
+
+In the spec, the success response of a `Responder` route is documented under
+`ResponseContentType` (`application/octet-stream` by default) with
+`{type: string, format: binary}`, or `{type: string}` for a `text/...` media
+type. For a regular JSON output, `ResponseContentType` sets the media type the
+JSON is sent and documented with (e.g. `application/vnd.api+json`).
+
+### Server-Sent Events
+
+A Server-Sent Events stream is a `Responder` written by the application:
+
+```go
+// EventStream sends the events of one subscription until the client goes
+// away or the server ends the subscription.
+type EventStream struct {
+    events <-chan Event
+    cancel func()
+}
+
+func (s *EventStream) Respond(c fiber.Ctx) error {
+    c.Set("Content-Type", "text/event-stream")
+    c.Set("Cache-Control", "no-cache")
+    c.Set("X-Accel-Buffering", "no") // disable proxy buffering (nginx)
+
+    // The writer runs after the handler has returned: do not use c inside it.
+    return c.SendStreamWriter(func(w *bufio.Writer) {
+        defer s.cancel()
+        ping := time.NewTicker(15 * time.Second)
+        defer ping.Stop()
+        for {
+            select {
+            case event, ok := <-s.events:
+                if !ok {
+                    return // the server closes the stream
+                }
+                fmt.Fprintf(w, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, event.Type, event.Data)
+            case <-ping.C:
+                fmt.Fprint(w, ": ping\n\n") // keeps idle connections open
+            }
+            if err := w.Flush(); err != nil {
+                return // the client is gone
+            }
+        }
+    })
+}
+
+fiberoapi.Get(v1, "/sync/events",
+    func(c fiber.Ctx, _ struct{}) (*EventStream, error) {
+        events, cancel := broker.Subscribe()
+        return &EventStream{events: events, cancel: cancel}, nil
+    },
+    fiberoapi.OpenAPIOptions{
+        Summary:             "Change feed",
+        ResponseContentType: "text/event-stream",
+    },
+)
+```
+
+Two settings live outside the library and must be handled by the application:
+
+- **Compression.** The `compress` middleware buffers the response, so events
+  would never reach the client. Exclude the stream from it:
+  `compress.New(compress.Config{Next: func(c fiber.Ctx) bool { return c.Path() == "/v1/sync/events" }})`.
+- **`WriteTimeout`.** `fiber.Config.WriteTimeout` bounds the whole response,
+  stream included. Leave it at 0 or above the longest stream you serve, or end
+  streams on the server side periodically and let clients reconnect
+  (`EventSource` does so automatically, sending `Last-Event-ID`).
+
 ## Error responses
 
 When the default validation / parse handler runs (i.e. no custom `ValidationErrorHandler`

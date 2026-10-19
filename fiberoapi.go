@@ -254,7 +254,8 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		if op.InputType != nil {
 			collectAllTypes(op.InputType, allTypes)
 		}
-		if op.OutputType != nil {
+		// A Responder writes its own body: its fields are not a schema.
+		if op.OutputType != nil && !op.responder {
 			collectAllTypes(op.OutputType, allTypes)
 		}
 		if op.ErrorType != nil && !isEmptyStruct(op.ErrorType) {
@@ -436,6 +437,17 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		}
 		if op.Options.SuccessStatus == fiber.StatusNoContent {
 			responses[successKey] = map[string]interface{}{"description": successDescription}
+		} else if op.responder {
+			mediaType := op.Options.ResponseContentType
+			if mediaType == "" {
+				mediaType = fiber.MIMEOctetStream
+			}
+			responses[successKey] = map[string]interface{}{
+				"description": successDescription,
+				"content": map[string]interface{}{
+					mediaType: map[string]interface{}{"schema": responderSchema(mediaType)},
+				},
+			}
 		} else if op.OutputType != nil {
 			outputType := dereferenceType(op.OutputType)
 
@@ -450,10 +462,14 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 				}
 			}
 
+			mediaType := op.Options.ResponseContentType
+			if mediaType == "" {
+				mediaType = fiber.MIMEApplicationJSON
+			}
 			responses[successKey] = map[string]interface{}{
 				"description": successDescription,
 				"content": map[string]interface{}{
-					"application/json": map[string]interface{}{
+					mediaType: map[string]interface{}{
 						"schema": schemaRef,
 					},
 				},
@@ -1227,6 +1243,8 @@ func Method[TInput any, TOutput any, TError any](
 	var outputZero TOutput
 	var errorZero TError
 
+	outputIsResponder := reflect.TypeFor[TOutput]().Implements(responderType)
+
 	app.operations = append(app.operations, OpenAPIOperation{
 		Method:     m,
 		Path:       fullPath,
@@ -1234,6 +1252,7 @@ func Method[TInput any, TOutput any, TError any](
 		InputType:  reflect.TypeOf(inputZero),
 		OutputType: reflect.TypeOf(outputZero),
 		ErrorType:  reflect.TypeOf(errorZero),
+		responder:  outputIsResponder,
 	})
 
 	inputType := reflect.TypeOf(inputZero)
@@ -1252,12 +1271,27 @@ func Method[TInput any, TOutput any, TError any](
 		}
 
 		status := successStatus(c, output, options.SuccessStatus)
+
+		// An output that writes its own response (binary, stream, SSE).
+		if outputIsResponder {
+			if responder, ok := any(output).(Responder); ok && responder != nil && !isNilPointer(responder) {
+				c.Status(status)
+				return responder.Respond(c)
+			}
+		}
+
 		if status == fiber.StatusNoContent || status == fiber.StatusNotModified {
 			return c.SendStatus(status)
 		}
 		c.Status(status)
 
-		if err := c.JSON(output); err != nil {
+		var jsonErr error
+		if options.ResponseContentType != "" {
+			jsonErr = c.JSON(output, options.ResponseContentType)
+		} else {
+			jsonErr = c.JSON(output)
+		}
+		if err := jsonErr; err != nil {
 			var fallbackErr error
 			if app.config.ProblemDetails {
 				fallbackErr = writeProblem(c, app.config.problemFor(errorCategory{
