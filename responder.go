@@ -28,8 +28,9 @@ type RawResponse struct {
 	Body        []byte
 }
 
-// Respond writes the status, the Content-Type and the body.
-func (r *RawResponse) Respond(c fiber.Ctx) error {
+// Respond writes the status, the Content-Type and the body. Its receiver is a
+// value, so a RawResponse works by value as well as by pointer.
+func (r RawResponse) Respond(c fiber.Ctx) error {
 	if r.Status != 0 {
 		c.Status(r.Status)
 	}

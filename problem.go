@@ -27,14 +27,17 @@ type Problem struct {
 	Errors   []ValidationErrorEntry `json:"errors,omitempty" yaml:"errors,omitempty"`
 }
 
+// The methods of Problem have value receivers, so that a Problem works the
+// same whether it is passed by value or by pointer.
+
 // HTTPStatus returns the status of the problem.
-func (p *Problem) HTTPStatus() int { return p.Status }
+func (p Problem) HTTPStatus() int { return p.Status }
 
 // ContentType returns application/problem+json.
-func (p *Problem) ContentType() string { return MIMEApplicationProblemJSON }
+func (p Problem) ContentType() string { return MIMEApplicationProblemJSON }
 
 // Error returns the title of the problem.
-func (p *Problem) Error() string { return p.Title }
+func (p Problem) Error() string { return p.Title }
 
 // ContentTyper is an optional interface an error value (TError, an entry of
 // OpenAPIOptions.Errors) can implement to choose the Content-Type it is sent
