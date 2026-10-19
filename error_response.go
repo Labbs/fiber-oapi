@@ -128,6 +128,10 @@ func (r *locResolver) resolve(namespace string) (loc []any, leaf string) {
 			break
 		}
 		if i == 0 {
+			if field.Tag.Get("body") == "raw" {
+				// The raw body is the whole body, not a field of it.
+				return []any{"body"}, ""
+			}
 			if tag := field.Tag.Get("uri"); tag != "" {
 				loc = append(loc, "path", tag)
 			} else if tag := field.Tag.Get("query"); tag != "" {
@@ -318,7 +322,8 @@ func buildEnvelope(c fiber.Ctx, cfg Config, inputType reflect.Type, err error) (
 				Msg:        translateValidatorTag(leaf, fe.Tag(), fe.Param()),
 				Constraint: constraintString(fe.Tag(), fe.Param()),
 			}
-			if cfg.IncludeInvalidValueInErrors {
+			// A raw body is never echoed back, however large it is.
+			if cfg.IncludeInvalidValueInErrors && fe.Type() != bytesType {
 				entry.Value = fe.Value()
 			}
 			entries = append(entries, entry)

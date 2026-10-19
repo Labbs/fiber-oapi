@@ -1,6 +1,7 @@
 package fiberoapi
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strings"
@@ -23,6 +24,9 @@ type inputShape struct {
 	// isStruct is true when the request input is a (possibly pointer-to) struct,
 	// i.e. eligible for URI/Query/Header binding.
 	isStruct bool
+	// rawBody is the index of the []byte field tagged body:"raw", which
+	// receives the request body as-is, or -1.
+	rawBody int
 }
 
 var shapeCache sync.Map // map[reflect.Type]*inputShape
@@ -34,8 +38,10 @@ func shapeFor[TInput any]() *inputShape {
 	if cached, ok := shapeCache.Load(t); ok {
 		return cached.(*inputShape)
 	}
+	rawBody, _ := rawBodyField(t) // an invalid declaration panics in Method
 	s := &inputShape{
 		isStruct: t != nil && dereferenceType(t).Kind() == reflect.Struct,
+		rawBody:  rawBody,
 	}
 	actual, _ := shapeCache.LoadOrStore(t, s)
 	return actual.(*inputShape)
@@ -55,7 +61,14 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	// matches keys case-insensitively, so a field tagged uri:"id" without
 	// json:"-" would otherwise be overwritten by {"id": "..."} in the body.
 	method := c.Method()
-	if method == "POST" || method == "PUT" || method == "PATCH" {
+	if (method == "POST" || method == "PUT" || method == "PATCH") && shape.rawBody >= 0 {
+		// The body is taken as-is, whatever its Content-Type. Fiber reuses its
+		// buffers, so it is copied. An empty body leaves the field nil, so that
+		// validate:"required" rejects it.
+		if body := c.Body(); len(body) > 0 {
+			setRawBody(&input, shape.rawBody, bytes.Clone(body))
+		}
+	} else if method == "POST" || method == "PUT" || method == "PATCH" {
 		bodyLength := len(c.Body())
 		contentType := c.Get("Content-Type")
 
@@ -120,6 +133,49 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 func securityDisabled(options *OpenAPIOptions) bool {
 	securityValue, ok := options.Security.(string)
 	return ok && securityValue == "disabled"
+}
+
+// rawBodyField returns the index of the field tagged body:"raw" in the input
+// struct t, or -1 when there is none. The field must be a []byte, and there
+// can be only one.
+func rawBodyField(t reflect.Type) (int, error) {
+	if t == nil {
+		return -1, nil
+	}
+	t = dereferenceType(t)
+	if t.Kind() != reflect.Struct {
+		return -1, nil
+	}
+	index := -1
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		if field.Tag.Get("body") != "raw" {
+			continue
+		}
+		if !field.IsExported() || field.Type != bytesType {
+			return -1, fmt.Errorf("field %s has body:\"raw\" but is not an exported []byte", field.Name)
+		}
+		if index >= 0 {
+			return -1, fmt.Errorf("fields %s and %s both have body:\"raw\"", t.Field(index).Name, field.Name)
+		}
+		index = i
+	}
+	return index, nil
+}
+
+var bytesType = reflect.TypeFor[[]byte]()
+
+// setRawBody stores body in the raw body field of input, allocating the
+// struct when the input is a nil pointer.
+func setRawBody[TInput any](input *TInput, field int, body []byte) {
+	v := reflect.ValueOf(input).Elem()
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v.Set(reflect.New(v.Type().Elem()))
+		}
+		v = v.Elem()
+	}
+	v.Field(field).SetBytes(body)
 }
 
 // handleCustomError emits the error instance a handler returned through its

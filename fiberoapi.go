@@ -378,7 +378,22 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 
 		// Add request body schema for POST/PUT methods
 		if op.Method == "POST" || op.Method == "PUT" || op.Method == "PATCH" {
-			if op.InputType != nil {
+			if rawBody, _ := rawBodyField(op.InputType); rawBody >= 0 {
+				// The body is received as-is: documented as binary, under
+				// RequestContentType (application/octet-stream by default).
+				mediaType := op.Options.RequestContentType
+				if mediaType == "" {
+					mediaType = fiber.MIMEOctetStream
+				}
+				enhancedOptions["requestBody"] = map[string]interface{}{
+					"required": true,
+					"content": map[string]interface{}{
+						mediaType: map[string]interface{}{
+							"schema": map[string]interface{}{"type": "string", "format": "binary"},
+						},
+					},
+				}
+			} else if op.InputType != nil {
 				inputType := dereferenceType(op.InputType)
 
 				var schemaRef map[string]interface{}
@@ -392,10 +407,14 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 					}
 				}
 
+				mediaType := op.Options.RequestContentType
+				if mediaType == "" {
+					mediaType = fiber.MIMEApplicationJSON
+				}
 				enhancedOptions["requestBody"] = map[string]interface{}{
 					"required": true,
 					"content": map[string]interface{}{
-						"application/json": map[string]interface{}{
+						mediaType: map[string]interface{}{
 							"schema": schemaRef,
 						},
 					},
@@ -1198,6 +1217,9 @@ func Method[TInput any, TOutput any, TError any](
 	// Validate path parameters with the input struct
 	if err := validatePathParams[TInput](fullPath); err != nil {
 		panic(fmt.Sprintf("Path validation failed for %s: %v", fullPath, err))
+	}
+	if _, err := rawBodyField(reflect.TypeFor[TInput]()); err != nil {
+		panic(fmt.Sprintf("Raw body validation failed for %s: %v", fullPath, err))
 	}
 
 	// Register the operation for OpenAPI documentation with type information

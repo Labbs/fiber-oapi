@@ -179,6 +179,11 @@ type OpenAPIOptions struct {
 	// response with the same key — e.g. to document a "200" next to a
 	// SuccessStatus of 201.
 	Responses map[string]any `json:"-"`
+
+	// RequestContentType is the media type the request body is documented
+	// with. Default: application/octet-stream for an input with a body:"raw"
+	// field, application/json otherwise.
+	RequestContentType string `json:"-"`
 }
 
 // OpenAPIOperation represents a registered operation
