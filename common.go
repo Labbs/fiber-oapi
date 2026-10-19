@@ -49,19 +49,11 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 
 	shape := shapeFor[TInput]()
 
-	if shape.isStruct {
-		if err := c.Bind().URI(&input); err != nil {
-			return input, err
-		}
-		if err := c.Bind().Query(&input); err != nil {
-			return input, err
-		}
-	}
-
 	// Parse body for POST/PUT/PATCH methods only if there's content.
-	// Body is parsed before headers so that header values take priority over any
-	// field that the JSON decoder may have populated (e.g. when a header-bound
-	// field is also sent in the body without a json:"-" tag).
+	// The body is parsed first so that path, query and header values take
+	// priority over any field the JSON decoder may have populated. The decoder
+	// matches keys case-insensitively, so a field tagged uri:"id" without
+	// json:"-" would otherwise be overwritten by {"id": "..."} in the body.
 	method := c.Method()
 	if method == "POST" || method == "PUT" || method == "PATCH" {
 		bodyLength := len(c.Body())
@@ -84,6 +76,12 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 	}
 
 	if shape.isStruct {
+		if err := c.Bind().URI(&input); err != nil {
+			return input, err
+		}
+		if err := c.Bind().Query(&input); err != nil {
+			return input, err
+		}
 		if err := c.Bind().Header(&input); err != nil {
 			return input, err
 		}

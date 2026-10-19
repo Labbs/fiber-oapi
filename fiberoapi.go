@@ -827,7 +827,12 @@ func generateSchema(t reflect.Type) map[string]interface{} {
 			}
 
 			// Skip fields that are path, query, or header parameters - they are handled separately
-			if field.Tag.Get("path") != "" || field.Tag.Get("query") != "" || field.Tag.Get("header") != "" {
+			if field.Tag.Get("path") != "" || field.Tag.Get("uri") != "" || field.Tag.Get("query") != "" || field.Tag.Get("header") != "" {
+				continue
+			}
+
+			// Skip the raw body field - the request body is documented as binary
+			if field.Tag.Get("body") == "raw" {
 				continue
 			}
 
