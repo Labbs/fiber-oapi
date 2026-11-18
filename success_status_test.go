@@ -110,3 +110,149 @@ func TestSuccessStatus_Spec(t *testing.T) {
 	assert.Equal(t, map[string]any{"description": "Same content already present"}, blobs["200"])
 	assert.Equal(t, map[string]any{"description": "Replaced"}, blobs["422"], "Responses replace generated entries")
 }
+
+// Without SuccessStatus, a route keeps its 200 JSON response, in the spec and
+// at runtime.
+func TestSuccessStatus_DefaultIs200(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Post(oapi, "/items", func(c fiber.Ctx, _ struct{}) (customErrOutput, struct{}) {
+		return customErrOutput{Message: "ok"}, struct{}{}
+	}, OpenAPIOptions{})
+
+	responses := operationResponses(oapi, "/items", "post")
+	require.Contains(t, responses, "200")
+	ok := responses["200"].(map[string]any)
+	assert.Equal(t, "Successful response", ok["description"])
+	schema := ok["content"].(map[string]any)["application/json"].(map[string]any)["schema"]
+	assert.Equal(t, map[string]any{"$ref": "#/components/schemas/customErrOutput"}, schema)
+
+	resp, err := app.Test(httptest.NewRequest("POST", "/items", nil))
+	require.NoError(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Content-Type"), "application/json")
+	raw, _ := io.ReadAll(resp.Body)
+	assert.JSONEq(t, `{"message":"ok"}`, string(raw))
+}
+
+// A 201 POST documents the output schema under "201", and only there.
+func TestSuccessStatus_201KeepsOutputSchema(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Post(oapi, "/items", func(c fiber.Ctx, _ struct{}) (customErrOutput, struct{}) {
+		return customErrOutput{Message: "ok"}, struct{}{}
+	}, OpenAPIOptions{SuccessStatus: 201})
+
+	responses := operationResponses(oapi, "/items", "post")
+	assert.NotContains(t, responses, "200")
+	require.Contains(t, responses, "201")
+	schema := responses["201"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"]
+	assert.Equal(t, map[string]any{"$ref": "#/components/schemas/customErrOutput"}, schema)
+}
+
+// A 204 DELETE is documented without content and answers an empty body even
+// when the handler returns a value.
+func TestSuccessStatus_204DeleteDropsBody(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Delete(oapi, "/items/:name", func(c fiber.Ctx, in customErrInput) (customErrOutput, struct{}) {
+		return customErrOutput{Message: "deleted " + in.Name}, struct{}{}
+	}, OpenAPIOptions{SuccessStatus: 204})
+
+	responses := operationResponses(oapi, "/items/{name}", "delete")
+	assert.NotContains(t, responses, "200")
+	require.Contains(t, responses, "204")
+	assert.Equal(t, map[string]any{"description": "No Content"}, responses["204"])
+
+	status, body := doRequest(t, app, "DELETE", "/items/abc")
+	assert.Equal(t, 204, status)
+	assert.Empty(t, body)
+}
+
+func TestSuccessStatus_205HasNoBody(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Post(oapi, "/form", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {
+		return fiber.Map{"ignored": true}, struct{}{}
+	}, OpenAPIOptions{SuccessStatus: 205})
+
+	assert.Equal(t, map[string]any{"description": "Reset Content"}, operationResponses(oapi, "/form", "post")["205"])
+	status, body := doRequest(t, app, "POST", "/form")
+	assert.Equal(t, 205, status)
+	assert.Empty(t, body)
+}
+
+// An error returned by a 201 route keeps its own status.
+func TestSuccessStatus_ErrorWins(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	Post(oapi, "/items/:name", func(c fiber.Ctx, in customErrInput) (customErrOutput, *AppError) {
+		if in.Name == "taken" {
+			return customErrOutput{}, appConflict("already exists")
+		}
+		return customErrOutput{Message: "ok"}, nil
+	}, OpenAPIOptions{SuccessStatus: 201, Errors: []any{appConflict("already exists")}})
+
+	responses := operationResponses(oapi, "/items/{name}", "post")
+	assert.Contains(t, responses, "201")
+	assert.Contains(t, responses, "409")
+
+	status, _ := doRequest(t, app, "POST", "/items/fresh")
+	assert.Equal(t, 201, status)
+	status, body := doRequest(t, app, "POST", "/items/taken")
+	assert.Equal(t, 409, status)
+	assert.Contains(t, body, "already exists")
+	status, _ = doRequest(t, app, "POST", "/items/x")
+	assert.Equal(t, 422, status, "a validation error keeps its status too")
+}
+
+func TestSuccessStatus_RejectsNon2xx(t *testing.T) {
+	for _, status := range []int{404, 302, 199, 300, 500, -1} {
+		app := fiber.New()
+		oapi := New(app)
+		assert.Panics(t, func() {
+			Post(oapi, "/items", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {
+				return fiber.Map{}, struct{}{}
+			}, OpenAPIOptions{SuccessStatus: status})
+		}, "SuccessStatus %d", status)
+	}
+
+	app := fiber.New()
+	oapi := New(app)
+	assert.PanicsWithValue(t, "Success status validation failed for DELETE /v1/items: SuccessStatus 404 is not a 2xx status code", func() {
+		Delete(Group(oapi, "/v1"), "/items", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {
+			return fiber.Map{}, struct{}{}
+		}, OpenAPIOptions{SuccessStatus: 404})
+	})
+
+	for _, status := range []int{0, 200, 201, 204, 299} {
+		assert.NotPanics(t, func() {
+			Post(New(fiber.New()), "/items", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {
+				return fiber.Map{}, struct{}{}
+			}, OpenAPIOptions{SuccessStatus: status})
+		}, "SuccessStatus %d", status)
+	}
+}
+
+func TestSuccessStatus_Group(t *testing.T) {
+	app := fiber.New()
+	oapi := New(app)
+	v1 := Group(oapi, "/v1")
+	admin := Group(v1, "/admin")
+	Post(v1, "/items", func(c fiber.Ctx, _ struct{}) (fiber.Map, struct{}) {
+		return fiber.Map{"id": "1"}, struct{}{}
+	}, OpenAPIOptions{SuccessStatus: 201})
+	Delete(admin, "/items/:name", func(c fiber.Ctx, _ customErrInput) (fiber.Map, struct{}) {
+		return fiber.Map{"ignored": true}, struct{}{}
+	}, OpenAPIOptions{SuccessStatus: 204})
+
+	assert.Contains(t, operationResponses(oapi, "/v1/items", "post"), "201")
+	assert.Equal(t, map[string]any{"description": "No Content"}, operationResponses(oapi, "/v1/admin/items/{name}", "delete")["204"])
+
+	status, body := doRequest(t, app, "POST", "/v1/items")
+	assert.Equal(t, 201, status)
+	assert.JSONEq(t, `{"id":"1"}`, body)
+	status, body = doRequest(t, app, "DELETE", "/v1/admin/items/abc")
+	assert.Equal(t, 204, status)
+	assert.Empty(t, body)
+}

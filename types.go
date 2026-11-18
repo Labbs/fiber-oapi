@@ -159,7 +159,9 @@ type OpenAPIOptions struct {
 	Middlewares []fiber.Handler `json:"-"`
 
 	// SuccessStatus is the status of a successful response, at runtime and in
-	// the spec (e.g. 201, 204). Default: 200. A 204 is sent without a body.
+	// the spec (e.g. 201, 204). Default (0): 200. It must be a 2xx code: any
+	// other value panics when the route is registered. A 204 or 205 is sent
+	// without a body and documented without content.
 	// At runtime a status other than 200 set by the handler wins, then the
 	// HTTPStatus() of the output (see HTTPStatusError), then SuccessStatus.
 	SuccessStatus int `json:"-"`

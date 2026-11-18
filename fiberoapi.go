@@ -432,7 +432,7 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 				successDescription = text
 			}
 		}
-		if op.Options.SuccessStatus == fiber.StatusNoContent {
+		if isBodylessStatus(op.Options.SuccessStatus) {
 			responses[successKey] = map[string]interface{}{"description": successDescription}
 		} else if op.responder {
 			mediaType := op.Options.ResponseContentType
@@ -1234,6 +1234,9 @@ func Method[TInput any, TOutput any, TError any](
 	if _, err := rawBodyField(reflect.TypeFor[TInput]()); err != nil {
 		panic(fmt.Sprintf("Raw body validation failed for %s: %v", fullPath, err))
 	}
+	if err := validateSuccessStatus(options.SuccessStatus); err != nil {
+		panic(fmt.Sprintf("Success status validation failed for %s %s: %v", m, fullPath, err))
+	}
 
 	// Register the operation for OpenAPI documentation with type information
 	var inputZero TInput
@@ -1277,7 +1280,7 @@ func Method[TInput any, TOutput any, TError any](
 			}
 		}
 
-		if status == fiber.StatusNoContent || status == fiber.StatusNotModified {
+		if isBodylessStatus(status) {
 			return c.SendStatus(status)
 		}
 		c.Status(status)
@@ -1329,6 +1332,20 @@ func Method[TInput any, TOutput any, TError any](
 	chain = append(chain, fiberHandler)
 
 	app.f.Add([]string{m}, fullPath, chain[0], chain[1:]...)
+}
+
+// validateSuccessStatus accepts 0 (the default, 200) and the 2xx codes.
+func validateSuccessStatus(status int) error {
+	if status == 0 || (status >= 200 && status <= 299) {
+		return nil
+	}
+	return fmt.Errorf("SuccessStatus %d is not a 2xx status code", status)
+}
+
+// isBodylessStatus reports whether a response with this status has no body:
+// 204 No Content, 205 Reset Content and 304 Not Modified.
+func isBodylessStatus(status int) bool {
+	return status == fiber.StatusNoContent || status == fiber.StatusResetContent || status == fiber.StatusNotModified
 }
 
 // successStatus resolves the status of a successful response: a status other

@@ -292,3 +292,51 @@ func TestAlign_V33Options_RuntimeMatchesSpec(t *testing.T) {
 	login := spec["paths"].(map[string]any)["/v1/auth/login"].(map[string]any)["post"].(map[string]any)["responses"].(map[string]any)
 	assert.NotContains(t, login, "401", "a public route documents no authentication error")
 }
+
+// TestAlign_SuccessStatus_RuntimeMatchesSpec checks, for every method and both
+// registration points (app and group), that the only 2xx key of the spec is
+// the status sent at runtime, and that a documented content goes with a body.
+func TestAlign_SuccessStatus_RuntimeMatchesSpec(t *testing.T) {
+	type register func(OApiRouter, string, HandlerFunc[struct{}, alignOutput, struct{}], OpenAPIOptions)
+	methods := map[string]register{
+		"GET":    Get[struct{}, alignOutput, struct{}],
+		"POST":   Post[struct{}, alignOutput, struct{}],
+		"PUT":    Put[struct{}, alignOutput, struct{}],
+		"PATCH":  Patch[struct{}, alignOutput, struct{}],
+		"DELETE": Delete[struct{}, alignOutput, struct{}],
+	}
+	handler := func(c fiber.Ctx, _ struct{}) (alignOutput, struct{}) {
+		return alignOutput{Message: "ok"}, struct{}{}
+	}
+
+	for _, configured := range []int{0, 200, 201, 202, 204, 205} {
+		for method, reg := range methods {
+			for _, prefix := range []string{"", "/g"} {
+				app := fiber.New()
+				oapi := New(app)
+				var router OApiRouter = oapi
+				if prefix != "" {
+					router = Group(oapi, prefix)
+				}
+				reg(router, "/r", handler, OpenAPIOptions{SuccessStatus: configured})
+				name := method + " " + prefix + "/r " + http.StatusText(configured)
+
+				var documented []string
+				for key := range operationResponses(oapi, prefix+"/r", strings.ToLower(method)) {
+					if strings.HasPrefix(key, "2") {
+						documented = append(documented, key)
+					}
+				}
+				require.Len(t, documented, 1, name)
+				response := operationResponses(oapi, prefix+"/r", strings.ToLower(method))[documented[0]].(map[string]any)
+				_, hasContent := response["content"]
+
+				resp, err := app.Test(httptest.NewRequest(method, prefix+"/r", nil))
+				require.NoError(t, err)
+				raw, _ := io.ReadAll(resp.Body)
+				assert.Equal(t, documented[0], statusCodeKey(resp.StatusCode), name)
+				assert.Equal(t, hasContent, len(raw) > 0, "%s: documented content must match the body", name)
+			}
+		}
+	}
+}

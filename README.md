@@ -221,8 +221,15 @@ At runtime, the status of a successful response is, in order:
 3. `SuccessStatus`;
 4. 200.
 
-The spec documents the success response under `SuccessStatus`. `Responses`
-is merged last and replaces any generated response with the same key.
+The spec documents the success response under `SuccessStatus`, with the HTTP
+reason phrase as description ("Created", "No Content"...). A 204 or 205 is
+documented without `content` and always sent without a body, whatever the
+handler returns. `Responses` is merged last and replaces any generated
+response with the same key.
+
+`SuccessStatus` must be 0 (200) or a 2xx code: any other value (`404`,
+`302`...) panics when the route is registered. An error returned by the
+handler, a validation error or an authentication error keeps its own status.
 
 ## Route middlewares
 
