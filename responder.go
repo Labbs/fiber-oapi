@@ -34,7 +34,7 @@ func (r RawResponse) Respond(c fiber.Ctx) error {
 	if r.Status != 0 {
 		c.Status(r.Status)
 	}
-	if status := c.Response().StatusCode(); status == fiber.StatusNoContent || status == fiber.StatusNotModified {
+	if status := c.Response().StatusCode(); isBodylessStatus(status) {
 		return c.SendStatus(status)
 	}
 	contentType := r.ContentType
