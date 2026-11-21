@@ -96,6 +96,7 @@ type Config struct {
     AuthErrorHandler       AuthErrorHandler          // Custom handler for auth errors (401/403/5xx)
     NotFoundHandler        fiber.Handler             // Custom handler for unmatched routes (see UseNotFoundHandler)
     DefaultErrorShape      any                       // One shape for library errors (see below)
+    ValidationErrorShape   any                       // Shape of validation errors, e.g. the body of ValidationErrorHandler (see below)
     IncludeInvalidValueInErrors bool                 // Echo the offending value in error entries (default: false)
 
     ProblemDetails         bool                      // Library errors as RFC 9457 problems (default: false)
@@ -577,9 +578,10 @@ via reflection (case-sensitive, applied only if present and settable):
 **One exception:** the 422 validation response keeps the rich `ErrorEnvelope`
 shape (one entry per failing field with `loc` / `constraint` / `field` /
 `value`). Collapsing a multi-field validation failure into a single flat struct
-would lose the structured info that form-level UX needs. If you really want a
-flat 422, declare your own entry at status 422 in `OpenAPIOptions.Errors` — the
-per-route override still wins.
+would lose the structured info that form-level UX needs. To document another
+shape for it, set `Config.ValidationErrorShape` (see
+[Validation Errors](#validation-errors)); a 422 entry in `OpenAPIOptions.Errors`
+still wins for its route.
 
 Result: in your spec every error response references `#/components/schemas/ErrorResponse`
 **except 422**, which stays on `#/components/schemas/ErrorEnvelope`.
@@ -951,6 +953,28 @@ oapi := fiberoapi.New(app, fiberoapi.Config{
     },
 })
 ```
+
+The spec cannot see what a handler writes: it keeps documenting validation
+errors as `ErrorEnvelope`, under `ValidationStatusCode` (422 by default). Set
+`ValidationErrorShape` to the type your handler sends, and `ValidationStatusCode`
+to the status it uses, so the spec documents the response the client gets:
+
+```go
+oapi := fiberoapi.New(app, fiberoapi.Config{
+    ValidationErrorHandler: myValidationHandler, // answers 422 with an ErrorResponse
+    ValidationErrorShape: ErrorResponse{         // filled instance: the example of the spec
+        Errors: []ErrorDetail{{Code: 422, Type: "validation_error", Details: "name is required"}},
+    },
+    DefaultErrorShape: ErrorResponse{}, // the other library errors, if they share the shape
+})
+```
+
+A filled instance is used as is as the example; a zero instance (`ErrorResponse{}`
+or `&ErrorResponse{}`) gets its `Code`, `Message`, `Type` and `Details` fields
+filled like `DefaultErrorShape`. Without a `ValidationErrorHandler`, the library
+itself sends that shape, filled the same way: the per-field entries of
+`ErrorEnvelope` are then lost. `ProblemDetails` takes precedence over
+`ValidationErrorShape`.
 
 ### Authentication/Authorization Errors
 

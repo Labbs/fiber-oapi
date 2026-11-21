@@ -55,6 +55,7 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.AuthErrorHandler != nil ||
 			provided.NotFoundHandler != nil ||
 			provided.DefaultErrorShape != nil ||
+			provided.ValidationErrorShape != nil ||
 			provided.ProblemDetails ||
 			provided.ValidationStatusCode != 0 ||
 			provided.ProblemCodes != nil
@@ -87,6 +88,7 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 			provided.AuthErrorHandler != nil ||
 			provided.NotFoundHandler != nil ||
 			provided.DefaultErrorShape != nil ||
+			provided.ValidationErrorShape != nil ||
 			provided.ProblemDetails ||
 			provided.ValidationStatusCode != 0 ||
 			provided.ProblemCodes != nil)
@@ -143,6 +145,9 @@ func New(app *fiber.App, config ...Config) *OApiApp {
 		}
 		if provided.DefaultErrorShape != nil {
 			cfg.DefaultErrorShape = provided.DefaultErrorShape
+		}
+		if provided.ValidationErrorShape != nil {
+			cfg.ValidationErrorShape = provided.ValidationErrorShape
 		}
 		if provided.IncludeInvalidValueInErrors {
 			cfg.IncludeInvalidValueInErrors = true
@@ -274,6 +279,9 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 	// (and any nested types) is collected so we never emit dangling references.
 	if o.config.DefaultErrorShape != nil {
 		collectAllTypes(reflect.TypeOf(o.config.DefaultErrorShape), allTypes)
+	}
+	if o.config.ValidationErrorShape != nil {
+		collectAllTypes(reflect.TypeOf(o.config.ValidationErrorShape), allTypes)
 	}
 
 	// Second pass: generate all schemas
@@ -523,7 +531,8 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 		// When the user opted into a unified shape via Config.DefaultErrorShape,
 		// every default entry but the validation one uses that shape (schema + a
 		// representative example built via the same reflection helpers used at
-		// runtime). Otherwise we fall back to the built-in ErrorEnvelope.
+		// runtime). Config.ValidationErrorShape does the same for the validation
+		// entry. Otherwise we fall back to the built-in ErrorEnvelope.
 		shape := o.config.DefaultErrorShape
 		defaultErrResponse := func(description string, cat errorCategory, envExample func() ErrorEnvelope) map[string]interface{} {
 			mediaType := fiber.MIMEApplicationJSON
@@ -539,10 +548,15 @@ func (o *OApiApp) GenerateOpenAPISpec() map[string]interface{} {
 					"schema":  map[string]interface{}{"$ref": "#/components/schemas/Problem"},
 					"example": o.config.problemFor(cat, entries),
 				}
-			// Validation errors always use ErrorEnvelope so per-field info (loc /
-			// constraint / field / value) stays first-class for clients building
-			// form-level UX, even when DefaultErrorShape is set for the other
-			// error categories.
+			case o.config.ValidationErrorShape != nil && cat.Type == errTypeValidation:
+				content = map[string]interface{}{
+					"schema":  errorSchemaRef(reflect.TypeOf(o.config.ValidationErrorShape)),
+					"example": shapeExample(o.config.ValidationErrorShape, cat),
+				}
+			// Without ValidationErrorShape, validation errors use ErrorEnvelope so
+			// per-field info (loc / constraint / field / value) stays first-class
+			// for clients building form-level UX, even when DefaultErrorShape is
+			// set for the other error categories.
 			case shape != nil && cat.Type != errTypeValidation:
 				content = map[string]interface{}{
 					"schema":  errorSchemaRef(reflect.TypeOf(shape)),
@@ -1401,6 +1415,10 @@ func (app *OApiApp) respondError(c fiber.Ctx, inputType reflect.Type, err error)
 	}
 	if app.config.ProblemDetails {
 		return writeProblem(c, app.problemForError(c, inputType, err))
+	}
+	if app.config.ValidationErrorShape != nil && isValidationError(err) {
+		cat := categorizeError(err, app.config.validationStatus())
+		return c.Status(cat.Code).JSON(materializeError(app.config.ValidationErrorShape, cat))
 	}
 	// If the user opted into a unified shape, emit it for parse / auth /
 	// generic errors. Validation errors keep the rich ErrorEnvelope shape
