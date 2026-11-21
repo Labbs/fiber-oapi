@@ -88,9 +88,19 @@ type Config struct {
 	// reflection.
 	//
 	// Note: 422 validation responses intentionally keep the rich ErrorEnvelope
-	// shape (one entry per failing field) even when DefaultErrorShape is set.
-	// Leaving DefaultErrorShape nil keeps the default ErrorEnvelope everywhere.
+	// shape (one entry per failing field) even when DefaultErrorShape is set;
+	// ValidationErrorShape changes them. Leaving DefaultErrorShape nil keeps
+	// the default ErrorEnvelope everywhere.
 	DefaultErrorShape any
+
+	// ValidationErrorShape, when non-nil, replaces ErrorEnvelope for
+	// validation errors, in the generated spec and at runtime. Set it to the
+	// type a custom ValidationErrorHandler sends, so the spec documents the
+	// body that handler writes. A filled instance is used as the example of
+	// the spec; a zero instance gets its fields filled like DefaultErrorShape.
+	// Without a ValidationErrorHandler, the library sends that shape, filled
+	// the same way. ProblemDetails takes precedence.
+	ValidationErrorShape any
 
 	IncludeInvalidValueInErrors bool // Include offending value in default error envelope (default: false — may leak secrets)
 

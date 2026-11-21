@@ -307,6 +307,20 @@ func materializeError(shape any, cat errorCategory) any {
 	return inst.Interface()
 }
 
+// shapeExample returns the spec example of an error documented with shape: shape
+// itself when it is a filled instance, the instance materializeError builds for
+// cat when it is a zero one (a zero struct, or a pointer to one).
+func shapeExample(shape any, cat errorCategory) any {
+	v := reflect.ValueOf(shape)
+	if v.Kind() == reflect.Ptr && !v.IsNil() {
+		v = v.Elem()
+	}
+	if v.IsValid() && !v.IsZero() {
+		return shape
+	}
+	return materializeError(shape, cat)
+}
+
 func setIntFieldIfPresent(v reflect.Value, name string, val int64) {
 	f := v.FieldByName(name)
 	if f.IsValid() && f.CanSet() && f.CanInt() {
