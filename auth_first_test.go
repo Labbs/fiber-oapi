@@ -149,6 +149,50 @@ func TestAuthFirst_RolesAndResourcesStillApply(t *testing.T) {
 	assert.Equal(t, 200, del("admin-token"))
 }
 
+// The required roles do not depend on the input: a caller without the role
+// gets its 403 before the request is read, whatever the body, and cannot
+// probe the validation rules of the route.
+func TestAuthFirst_RolesComeBeforeInputErrors(t *testing.T) {
+	app, decodes := newSpyApp()
+	var middlewareRuns atomic.Int32
+	oapi := New(app, Config{
+		EnableValidation:    true,
+		EnableAuthorization: true,
+		AuthService:         NewMockAuthService(),
+	})
+	handler := func(c fiber.Ctx, in authFirstBody) (fiber.Map, struct{}) {
+		return fiber.Map{"name": in.Name}, struct{}{}
+	}
+	counting := func(c fiber.Ctx) error {
+		middlewareRuns.Add(1)
+		return c.Next()
+	}
+	Post(oapi, "/admin/items", handler, WithRoles(OpenAPIOptions{Middlewares: []fiber.Handler{counting}}, "admin"))
+	Post(oapi, "/admin/all", handler, WithAllRoles(OpenAPIOptions{}, "admin", "user"))
+
+	cases := []struct {
+		name        string
+		path, token string
+		body        string
+		want        int
+	}{
+		{name: "no role, malformed body", path: "/admin/items", token: "valid-token", body: `{"name": 42`, want: 403},
+		{name: "no role, invalid body", path: "/admin/items", token: "valid-token", body: `{"name": "x"}`, want: 403},
+		{name: "no role, valid body", path: "/admin/items", token: "valid-token", body: `{"name": "widget"}`, want: 403},
+		{name: "one of all roles, invalid body", path: "/admin/all", token: "valid-token", body: `{"name": "x"}`, want: 403},
+		{name: "no token, invalid body", path: "/admin/items", body: `{"name": "x"}`, want: 401},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, postJSON(t, app, tc.path, tc.token, tc.body), tc.name)
+	}
+	assert.Zero(t, decodes.Load(), "the body must not be decoded for a caller without the role")
+	assert.Zero(t, middlewareRuns.Load(), "the route middlewares must not run for a caller without the role")
+
+	assert.Equal(t, 422, postJSON(t, app, "/admin/items", "admin-token", `{"name": "x"}`), "with the role, input errors come back")
+	assert.Equal(t, 200, postJSON(t, app, "/admin/items", "admin-token", `{"name": "widget"}`))
+	assert.Equal(t, int32(2), middlewareRuns.Load())
+}
+
 func TestAuthFirst_DisabledRouteSkipsAuthentication(t *testing.T) {
 	var validations atomic.Int32
 	app := fiber.New()
