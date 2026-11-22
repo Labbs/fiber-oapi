@@ -203,9 +203,11 @@ func authenticate(c fiber.Ctx, config *Config, routeSecurity []map[string][]stri
 	return nil, authErrorFrom(lastErr)
 }
 
-// authorize checks the required roles of the route, then the resource
+// authorize checks the required roles it is given, then the resource
 // permissions declared on the input (resource / action tags). It needs the
-// parsed input, so it always runs after the request has been read.
+// parsed input, so it always runs after the request has been read; the roles
+// of a route are normally checked before, by authenticateHandler, and reach
+// it only when no AuthService is configured.
 func authorize(c fiber.Ctx, authCtx *AuthContext, input interface{}, authService AuthorizationService, requiredRoles []string, requireAllRoles bool) error {
 	if authService == nil {
 		if len(requiredRoles) > 0 {

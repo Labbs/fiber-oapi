@@ -118,11 +118,17 @@ func parseInput[TInput any](app *OApiApp, c fiber.Ctx, path string, options *Ope
 
 	// Validate authorization if enabled in configuration and not disabled for this route
 	if app.config.EnableAuthorization && options != nil && !securityDisabled(options) {
-		// The request was authenticated before being read (see
-		// authenticateHandler); only roles and resource permissions, which
-		// need the input, are left.
+		// The request was authenticated, and its roles checked, before being
+		// read (see authenticateHandler); only the resource permissions, which
+		// need the input, are left. Without an AuthService, no
+		// authenticateHandler ran: authorize reports the missing service for a
+		// route that requires roles.
 		authCtx, _ := c.Locals("auth").(*AuthContext)
-		if err := authorize(c, authCtx, input, app.config.AuthService, options.RequiredRoles, options.RequireAllRoles); err != nil {
+		requiredRoles := options.RequiredRoles
+		if app.config.AuthService != nil {
+			requiredRoles = nil
+		}
+		if err := authorize(c, authCtx, input, app.config.AuthService, requiredRoles, options.RequireAllRoles); err != nil {
 			return input, err
 		}
 	}

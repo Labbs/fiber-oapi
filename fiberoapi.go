@@ -1330,13 +1330,14 @@ func Method[TInput any, TOutput any, TError any](
 	}
 
 	// Route chain: [authenticateHandler] + options.Middlewares + fiberHandler.
-	// On a protected route, credentials are checked before anything reads the
-	// request: a request that fails authentication never has its body decoded,
-	// and the route middlewares can call GetAuthContext.
+	// On a protected route, credentials and required roles are checked before
+	// anything reads the request: a request that fails authentication, or
+	// whose caller lacks the role, never has its body decoded, and the route
+	// middlewares can call GetAuthContext.
 	chain := make([]any, 0, len(options.Middlewares)+2)
 	if app.config.EnableAuthorization && app.config.AuthService != nil && !securityDisabled(&options) {
 		routeSecurity, _ := options.Security.([]map[string][]string)
-		chain = append(chain, app.authenticateHandler(inputType, routeSecurity))
+		chain = append(chain, app.authenticateHandler(inputType, routeSecurity, options.RequiredRoles, options.RequireAllRoles))
 	}
 	for _, mw := range options.Middlewares {
 		if mw != nil {
@@ -1388,8 +1389,11 @@ func isNilPointer(v any) bool {
 
 // authenticateHandler builds the handler placed at the head of every protected
 // route: it authenticates the request, stores the AuthContext in
-// c.Locals("auth") and moves on to the next handler.
-func (app *OApiApp) authenticateHandler(inputType reflect.Type, routeSecurity []map[string][]string) fiber.Handler {
+// c.Locals("auth"), checks the required roles of the route and moves on to
+// the next handler. The roles do not depend on the input, so they are checked
+// before the request is read: a caller without the role gets its 403 without
+// learning the validation rules of the route.
+func (app *OApiApp) authenticateHandler(inputType reflect.Type, routeSecurity []map[string][]string, requiredRoles []string, requireAllRoles bool) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		authCtx, err := authenticate(c, &app.config, routeSecurity)
 		if err != nil {
@@ -1397,6 +1401,14 @@ func (app *OApiApp) authenticateHandler(inputType reflect.Type, routeSecurity []
 		}
 		if authCtx != nil {
 			c.Locals("auth", authCtx)
+		}
+		if len(requiredRoles) > 0 {
+			if authCtx == nil {
+				return app.respondError(c, inputType, &AuthError{StatusCode: 401, Message: "authentication required"})
+			}
+			if err := checkRequiredRoles(authCtx, app.config.AuthService, requiredRoles, requireAllRoles); err != nil {
+				return app.respondError(c, inputType, err)
+			}
 		}
 		return c.Next()
 	}

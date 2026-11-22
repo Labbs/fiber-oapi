@@ -822,10 +822,11 @@ On a protected route, the credentials are checked before anything reads the
 request, in a handler placed at the head of the route:
 
 1. authentication (401 on failure);
-2. the [route middlewares](#route-middlewares);
-3. reading the input (path, query, body, headers) and validating it (400, 422);
-4. roles and resource permissions (403);
-5. the handler.
+2. required roles (`RequiredRoles`, `WithRoles`, `WithAllRoles`: 403);
+3. the [route middlewares](#route-middlewares);
+4. reading the input (path, query, body, headers) and validating it (400, 422);
+5. resource permissions (`resource` / `action` tags: 403);
+6. the handler.
 
 Group middlewares (`Group(prefix, handlers...)`, `Use`) run before step 1.
 
@@ -834,8 +835,11 @@ Group middlewares (`Group(prefix, handlers...)`, `Use`) run before step 1.
   unauthenticated client cannot probe the validation rules of the route.
 - [Route middlewares](#route-middlewares) run after authentication and can call
   `GetAuthContext(c)`.
-- Roles and resource permissions are still checked after the input is parsed,
-  since they need it.
+- A caller without a required role gets its 403 before the request is read:
+  it cannot probe the validation rules of the route, and the route middlewares
+  do not run for it.
+- Resource permissions are checked after the input is parsed, since they need
+  it.
 - Routes with `Security: "disabled"` are not authenticated.
 
 ### Public vs Protected Routes
